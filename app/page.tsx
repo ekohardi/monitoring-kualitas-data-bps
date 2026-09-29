@@ -1,47 +1,44 @@
-export default function Page() {
-  return (
-    <main
-      style={{
-        colorScheme: 'light dark',
-        position: 'relative',
-        display: 'flex',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'light-dark(#fff, #000)',
-        color: 'light-dark(#000, #fff)',
-      }}
-    >
-      <svg
-        aria-hidden="true"
-        style={{ width: 80, height: 80 }}
-        width={80}
-        height={80}
-        fill="none"
-        viewBox="0 0 20 20"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="0.5"
-      >
-        <path
-          d="M14.2 14.2H17V6.9375C17 4.76288 15.2371 3 13.0625 3H5.8V5.8M14.2 14.2V7.79063L7.79062 14.2H14.2ZM14.2 14.2V17H6.9375C4.76288 17 3 15.2371 3 13.0625V5.8H5.8M5.8 5.8V12.2313L12.2313 5.8H5.8Z"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: 'calc(50% + 56px)',
-          transform: 'translateX(-50%)',
-          whiteSpace: 'nowrap',
-          fontSize: '14px',
-          fontWeight: 500,
-          color: 'light-dark(#71717a, #a1a1aa)',
-        }}
-      >
-        Your v0 generation will show here.
-      </p>
-    </main>
-  )
+'use client'
+
+import { useMemo, useState } from 'react'
+import { BarChart3, CheckCircle2, ChevronDown, Database, FileCheck2, LayoutDashboard, LogOut, Menu, Plus, Search, Settings, ShieldCheck, Upload, Users, X } from 'lucide-react'
+
+type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'users'
+
+const negativeColumns = ['level_2_full_code','level_6_full_code','assignment_id','nama_principal','kategori','kbli_akhir','tahun_operasi','catatan','r27a_omzet','r26c_biaya_pembelian','r26b_biaya_produksi','r26d_biaya_operasional','nilai_tambah','link_fasih','source_file','source_folder']
+const kbliColumns = ['level_3_full_code','level_3_name','level_4_full_code','level_4_name','level_6_full_code','level_6_name','assignment_status_alias','nama_di_prelist','nama_usaha','kategori','kategori_2025','kbli_akhir','keg_utama','index1','link_fasih']
+
+const sampleNegative = [
+  ['52','5260101001','TBN-00124','Warung Sumber Rejeki','Perdagangan','47111','2024','Omzet belum terisi','0','0','0','0','0','Lihat','ntb_2025.csv','Tuban/01'],
+  ['52','5260101002','TBN-00125','Bengkel Maju Jaya','Jasa','45201','2023','Perlu konfirmasi biaya','12000000','4500000','1800000','2100000','3600000','Lihat','ntb_2025.csv','Tuban/01'],
+  ['52','5260101003','TBN-00126','Toko Berkah','Perdagangan','47112','2024','Data lengkap','8600000','2100000','900000','1100000','4400000','Lihat','ntb_2025.csv','Tuban/02'],
+]
+const sampleKbli = [
+  ['G','Perdagangan Besar & Eceran','47','Perdagangan Eceran','47111','Perdagangan eceran di toko','Aktif','Warung Sumber Rejeki','Warung Sumber Rejeki','Perdagangan','Perdagangan','47111','Jual sembako','Negatif','Lihat'],
+  ['C','Industri Pengolahan','10','Industri makanan','10710','Industri produk roti','Aktif','Roti Bu Tini','Roti Bu Tini','Industri','Industri','10710','Produksi roti','Positif','Lihat'],
+]
+
+function Login({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState('')
+  return <main className="login-shell"><div className="login-art"><div className="brand-mark">BPS</div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan akun petugas untuk melanjutkan.</p><label>Email</label><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="nama@bps.go.id" type="email" /><label>Password</label><input placeholder="••••••••" type="password" /><div className="login-row"><label className="check"><input type="checkbox" /> Ingat saya</label><a href="#">Lupa password?</a></div><button className="primary full" onClick={onLogin}>Masuk <span>→</span></button><p className="demo-note">Demo: masukkan email apa saja untuk melihat dashboard</p></div></main>
 }
+
+function App() {
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [tab, setTab] = useState<Tab>('dashboard')
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<'Semua'|'Belum dicek'|'Selesai'>('Semua')
+  const rows = useMemo(()=>tab === 'kbli' ? sampleKbli : sampleNegative, [tab])
+  if (!loggedIn) return <Login onLogin={()=>setLoggedIn(true)} />
+  const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'stage3',label:'Pembagian Stage 3',icon:BarChart3},{id:'negative',label:'Checklist NTB Negatif',icon:FileCheck2},{id:'kbli',label:'Checklist Data KBLI',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
+  const tableCols = tab === 'kbli' ? kbliColumns : negativeColumns
+  return <div className="app-shell"><aside className={mobileOpen?'sidebar open':'sidebar'}><div className="side-brand"><div className="brand-mark small">BPS</div><div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div><button className="close-nav" onClick={()=>setMobileOpen(false)}><X /></button></div><div className="side-section">MENU UTAMA</div><nav>{nav.map(item=>{const Icon=item.icon; return <button key={item.id} className={tab===item.id?'nav-item active':'nav-item'} onClick={()=>{setTab(item.id);setMobileOpen(false)}}><Icon />{item.label}{item.id==='negative'&&<b>12</b>}</button>})}</nav><div className="sidebar-bottom"><button className="nav-item"><Settings /> Pengaturan</button><button className="nav-item logout" onClick={()=>setLoggedIn(false)}><LogOut /> Keluar</button></div></aside><div className="main-area"><header><button className="menu-btn" onClick={()=>setMobileOpen(true)}><Menu /></button><div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div><div className="header-actions"><button className="icon-button"><Search /></button><div className="profile"><div className="avatar">AR</div><div><strong>Admin BPS</strong><span>Administrator</span></div><ChevronDown /></div></div></header><main className="content">{tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus}/>}</main></div></div>
+}
+
+function Dashboard({setTab}:{setTab:(t:Tab)=>void}) { return <><div className="page-heading"><div><p className="eyebrow blue">OVERVIEW</p><h1>Ringkasan Kualitas Data</h1><p className="muted">Pantau progres validasi data BPS Kabupaten Tuban.</p></div><button className="primary" onClick={()=>setTab('negative')}><Upload /> Import Data</button></div><div className="stats"><Stat title="Total Assignment" value="1.248" change="+12,5%" icon={Database} tone="blue"/><Stat title="Sudah Dicek" value="936" change="75%" icon={CheckCircle2} tone="green"/><Stat title="Perlu Tindak Lanjut" value="312" change="25%" icon={FileCheck2} tone="orange"/></div><div className="grid-two"><section className="panel progress-panel"><div className="panel-head"><div><h3>Progress Validasi</h3><p className="muted">Status pemeriksaan seluruh data</p></div><span className="period">2025 <ChevronDown /></span></div><div className="big-progress"><div className="progress-ring"><strong>75%</strong><span>selesai</span></div><div className="legend"><div><i className="dot blue-dot"/>Sudah dicek <b>936</b></div><div><i className="dot orange-dot"/>Belum dicek <b>312</b></div><div><i className="dot gray-dot"/>Tidak aktif <b>0</b></div></div></div></section><section className="panel stage-panel"><div className="panel-head"><div><h3>Pembagian Stage 3</h3><p className="muted">Distribusi assignment per petugas</p></div><button className="text-button" onClick={()=>setTab('stage3')}>Lihat semua →</button></div>{[['Petugas Lapangan A','186','83%'],['Petugas Lapangan B','154','71%'],['Petugas Lapangan C','128','64%'],['Petugas Lapangan D','96','52%']].map(x=><div className="person-progress" key={x[0]}><div><span>{x[0]}</span><b>{x[1]} data</b></div><div className="bar"><i style={{width:x[2]}}/></div><small>{x[2]}</small></div>)}</section></div><section className="panel activity"><div className="panel-head"><div><h3>Aktivitas Terbaru</h3><p className="muted">Pembaruan data terakhir</p></div><button className="text-button">Lihat log →</button></div><div className="activity-list">{[['AR','Admin Rina','mengunggah 248 data NTB Negatif','8 menit lalu'],['DS','Dwi Santoso','menyelesaikan checklist KBLI','32 menit lalu'],['LP','Lina Putri','ditambahkan ke Stage 3','1 jam lalu']].map(x=><div className="activity-item" key={x[1]}><div className="avatar soft">{x[0]}</div><div><strong>{x[1]}</strong> <span>{x[2]}</span><small>{x[3]}</small></div></div>)}</div></section></> }
+function Stat({title,value,change,icon:Icon,tone}:{title:string,value:string,change:string,icon:any,tone:string}){return <div className={'stat stat-'+tone}><div className="stat-icon"><Icon /></div><div><p>{title}</p><h2>{value}</h2><span>{change} <em>dari bulan lalu</em></span></div></div>}
+function TablePage({tab,columns,rows,query,setQuery,status,setStatus}:{tab:Tab,columns:string[],rows:string[][],query:string,setQuery:(s:string)=>void,status:string,setStatus:(s:any)=>void}){const title=tab==='stage3'?'Pembagian Stage 3':tab==='negative'?'Checklist Data NTB Negatif':'Checklist Data KBLI';return <><div className="page-heading"><div><p className="eyebrow blue">DATA MANAGEMENT</p><h1>{title}</h1><p className="muted">Kelola dan validasi data secara terstruktur.</p></div><button className="primary"><Plus /> Tambah Data</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari assignment, nama usaha..." /></div><select value={status} onChange={e=>setStatus(e.target.value)}><option>Semua</option><option>Belum dicek</option><option>Selesai</option></select><button className="outline"><Upload /> Import CSV</button></div><div className="table-wrap"><table><thead><tr><th><input type="checkbox" /></th>{columns.map(c=><th key={c}>{c}</th>)}<th>Status</th></tr></thead><tbody>{rows.map((row,i)=><tr key={i}><td><input type="checkbox" /></td>{row.map((v,j)=><td key={j} className={j===row.length-1?'link-cell':''}>{v}</td>)}<td><span className={i===2?'badge done':'badge pending'}>{i===2?'Selesai':'Belum dicek'}</span></td></tr>)}</tbody></table></div><div className="table-footer"><span>Menampilkan 1–{rows.length} dari 1.248 data</span><div><button className="page-btn">←</button><button className="page-btn selected">1</button><button className="page-btn">2</button><button className="page-btn">3</button><button className="page-btn">→</button></div></div></section></>}
+function UsersPage(){return <><div className="page-heading"><div><p className="eyebrow blue">ADMINISTRASI</p><h1>Manajemen Pengguna</h1><p className="muted">Kelola akses dan pembagian tugas pengguna.</p></div><button className="primary"><Plus /> Tambah Pengguna</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input placeholder="Cari nama atau email..." /></div><select><option>Semua peran</option><option>Administrator</option><option>Petugas</option></select></div><div className="users-list">{[['AR','Admin Rina','admin.rina@bps.go.id','Administrator','Aktif'],['DS','Dwi Santoso','dwi.santoso@bps.go.id','Petugas Lapangan','Aktif'],['LP','Lina Putri','lina.putri@bps.go.id','Petugas Lapangan','Aktif'],['BW','Budi Wibowo','budi.wibowo@bps.go.id','Reviewer','Nonaktif']].map(x=><div className="user-row" key={x[2]}><div className="avatar">{x[0]}</div><div className="user-main"><strong>{x[1]}</strong><span>{x[2]}</span></div><span className="role">{x[3]}</span><span className={x[4]==='Aktif'?'badge done':'badge inactive'}>{x[4]}</span><button className="more">•••</button></div>)}</div></section></>}
+
+export default App
