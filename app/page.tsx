@@ -68,7 +68,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
   return <><div className="page-heading"><div><p className="eyebrow blue">DATA MANAGEMENT</p><h1>{title}</h1><p className="muted">Satu tampilan pengecekan berdasarkan assignment_id.</p></div><button className="primary"><Plus /> Tambah Data</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari assignment, nama usaha, KBLI..." /></div><select value={status} onChange={e=>setStatus(e.target.value)}><option>Semua</option><option>Belum dicek</option><option>Selesai</option></select><button className="outline"><Upload /> Import CSV</button></div><div className="table-wrap combined-table"><table><thead><tr><th>Detail</th><th>assignment_id</th><th>Nama usaha</th><th>KBLI akhir</th><th>Pengecekan 1<br/><small>KBLI</small></th><th>Pengecekan 2<br/><small>NTB negatif</small></th><th>Pengecekan 3<br/><small>Kewajaran</small></th><th>Dicek oleh</th><th>Tanggal cek</th></tr></thead><tbody>{visible.map(row=>{const id=row[2], check=checks[id]; return <><tr key={id}><td><button className="detail-toggle" aria-label={`Detail ${id}`} onClick={()=>setExpanded(expanded===id?null:id)}><ChevronDown className={expanded===id?'rotated':''}/></button></td><td><strong>{id}</strong></td><td>{row[3]}</td><td>{row[5]}</td>{(['kbli','ntb','kewajaran'] as const).map((key,index)=><td key={key}><label className="check-cell"><input type="checkbox" checked={check[key]} onChange={()=>updateCheck(id,key)}/><span>{check[key]?'Sudah':'-'}</span></label></td>)}<td>{check.checkedBy || '-'}</td><td>{check.checkedAt || '-'}</td></tr>{expanded===id&&<tr className="details-row" key={`${id}-details`}><td colSpan={9}><div className="details-grid">{(tab==='kbli'?kbliColumns:negativeColumns).map((column,index)=><div key={column}><small>{column}</small><strong>{(tab==='kbli'?sampleKbli[0]:row)[index] || '-'}</strong></div>)}</div></td></tr>}</>})}</tbody></table></div><div className="table-footer"><span>Menampilkan {visible.length} dari {data.length} assignment</span><div><button className="page-btn">←</button><button className="page-btn selected">1</button><button className="page-btn">→</button></div></div></section></>}
 
 function UsersPage(){
-  type UserObj = id: string; initials: string; name: string; email: string; role: string; status: string; bidang: string }
+  type UserObj = { id: string; initials: string; name: string; email: string; role: string; status: string; bidang: string }
   const [users,setUsers]=useState<UserObj[]>([])
   const [query,setQuery]=useState(''); const [role,setRole]=useState('Semua peran'); const [modal,setModal]=useState(false); const [editing,setEditing]=useState<number|null>(null); const [menu,setMenu]=useState<number|null>(null)
   const [form,setForm]=useState({name:'',email:'',username:'',password:'',bidang:'',role:'Petugas Lapangan',status:'Aktif'})
@@ -116,7 +116,8 @@ function UsersPage(){
   }else{
     // Add your update logic here if editing API is implemented
   }
-setModal(false)}
+setModal(false)
+  }
   function toggle(index:number){
     //setUsers(users.map((u,i)=>i===index?[u[0],u[1],u[2],u[3],u[4]==='Aktif'?'Nonaktif':'Aktif',u[5],u[6]]:u));
     setUsers(users.map((u,i)=>i===index?{...u, status: u.status==='Aktif'?'Nonaktif':'Aktif'}:u));
