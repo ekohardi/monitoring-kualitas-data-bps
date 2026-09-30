@@ -108,8 +108,17 @@ function UsersPage(){
   async function save(){
     if(!form.name.trim()||!form.email.trim()||editing===null&&!form.password.trim())return;
     if(editing===null){
-      if(form.password.length<8){window.alert('Password minimal 8 karakter.');return} const response=await fetch('/api/users/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});
-      if(!response.ok){const result=await response.json().catch(()=>null);window.alert(result?.error||'Pengguna gagal disimpan ke database.');return} const created=await response.json();
+      if(form.password.length<8){window.alert('Password minimal 8 karakter.');return} const response=await fetch('/api/users/create',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(form)
+      });
+      if(!response.ok){
+        const result=await response.json().catch(()=>null);
+        window.alert(result?.error||'Pengguna gagal disimpan ke database.');
+        return;
+      }
+      const created=await response.json();
       const initials=form.name.split(' ').map(v=>v[0]).join('').slice(0,2).toUpperCase();
       //setUsers(current=>[...current,[initials,form.name,form.email,form.role,form.status,created.user?.id||created.id]])}
     setUsers(current=>[...current,{id: created.user?.id||created.id, initials, name: form.name, email: form.email, role: form.role, status: form.status, bidang: form.bidang}])
