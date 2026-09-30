@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { authClient } from '@/lib/auth-client'
 import { BarChart3, CheckCircle2, ChevronDown, Database, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
 type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'users'
@@ -19,8 +21,16 @@ const sampleKbli = [
 ]
 
 function Login({ onLogin }: { onLogin: () => void }) {
-  const [email, setEmail] = useState('')
-  return <main className="login-shell"><div className="login-art"><div className="brand-mark">BPS</div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan akun petugas untuk melanjutkan.</p><label>Email</label><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="nama@bps.go.id" type="email" /><label>Password</label><input placeholder="••••••••" type="password" /><div className="login-row"><label className="check"><input type="checkbox" /> Ingat saya</label><a href="#">Lupa password?</a></div><button className="primary full" onClick={onLogin}>Masuk <span>→</span></button><p className="demo-note">Demo: masukkan email apa saja untuk melihat dashboard</p></div></main>
+  const [identifier, setIdentifier] = useState('admin')
+  const [password, setPassword] = useState('admin123')
+  const [error, setError] = useState('')
+  async function submit() {
+    setError('')
+    const result = await authClient.signIn.email({ email: identifier.includes('@') ? identifier : `${identifier}@bps.go.id`, password })
+    if (result.error) setError('Username/email atau password tidak valid.')
+    else onLogin()
+  }
+  return <main className="login-shell"><div className="login-art"><div className="brand-mark">BPS</div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan email atau username untuk melanjutkan.</p><label>Email atau username</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="admin atau nama@bps.go.id" /><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" />{error&&<p className="error-text">{error}</p>}<button className="primary full" onClick={submit}>Masuk <span>→</span></button><p className="demo-note">Akun utama: admin / admin123</p></div></main>
 }
 
 function App() {
