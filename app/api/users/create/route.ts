@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   const name = String(body.name ?? '').trim()
   const email = String(body.email ?? '').trim().toLowerCase()
   const username = String(body.username ?? '').trim().toLowerCase()
+  const bidang = String(body.bidang ?? '')
   const password = String(body.password ?? '')
   const role = String(body.role ?? 'Petugas Lapangan')
   if (!name || !email || !password || password.length < 8) return NextResponse.json({ error: 'Nama, email, dan password minimal 8 karakter wajib diisi.' }, { status: 400 })
