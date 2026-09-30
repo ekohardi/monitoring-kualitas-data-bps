@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <defs>
+    <!-- Drop Shadow or styling if needed -->
+  </defs>
+
+  <!-- Top Arrow (Blue) -->
+  <path d="M 72 32 C 78 28 84 26 91 26 C 111 26 129 34 142 47 L 131 58 C 120 47 107 41 91 41 C 86 41 81 42 76 44 Z" fill="#5cb3ff"/>
+  <polygon points="56,38 78,20 74,45" fill="#5cb3ff"/>
+
+  <!-- Right Arrow (Red/Pink) -->
+  <path d="M 148 72 C 152 78 154 84 154 91 C 154 111 146 129 133 142 L 122 131 C 133 120 139 107 139 91 C 139 86 138 81 136 76 Z" fill="#f05161"/>
+  <polygon points="142,56 160,78 135,74" fill="#f05161"/>
+
+  <!-- Bottom Arrow (Green) -->
+  <path d="M 108 148 C 102 152 96 154 89 154 C 69 154 51 146 38 133 L 49 122 C 60 133 73 139 89 139 C 94 139 99 138 104 136 Z" fill="#45cc6b"/>
+  <polygon points="124,142 102,160 106,135" fill="#45cc6b"/>
+
+  <!-- Left Arrow (Yellow) -->
+  <path d="M 32 108 C 28 102 26 96 26 89 C 26 69 34 51 47 38 L 58 49 C 47 60 41 73 41 89 C 41 94 42 99 44 104 Z" fill="#ffbc42"/>
+  <polygon points="38,124 20,102 45,106" fill="#ffbc42"/>
+
+  <!-- Database Cylinder Stack -->
+  <!-- Back/Base structures or main bodies -->
+  <!-- Cylinder 1 (Top) -->
+  <ellipse cx="90" cy="62" rx="36" ry="14" fill="#4f517d"/>
+  <path d="M 54 62 L 54 83 C 54 90 70 96 90 96 C 110 96 126 90 126 83 L 126 62 Z" fill="#e2e2f9"/>
+  <ellipse cx="90" cy="83" rx="36" ry="14" fill="#d4d4f2"/>
+
+  <!-- Cylinder 2 (Middle) -->
+  <path d="M 54 86 L 54 107 C 54 114 70 120 90 120 C 110 120 126 114 126 107 L 126 86 Z" fill="#e2e2f9"/>
+  <ellipse cx="90" cy="107" rx="36" ry="14" fill="#d4d4f2"/>
+
+  <!-- Cylinder 3 (Bottom) -->
+  <path d="M 54 110 L 54 131 C 54 138 70 144 90 144 C 110 144 126 138 126 131 L 126 110 Z" fill="#d4d4f2"/>
+  <ellipse cx="90" cy="131" rx="36" ry="14" fill="#4f517d"/>
+
+  <!-- Details / Dots & Lines on cylinders -->
+  <!-- Top tier details -->
+  <circle cx="65" cy="74" r="4" fill="#e63946"/>
+  <circle cx="76" cy="74" r="4" fill="#ffb703"/>
+  <circle cx="89" cy="74" r="4" fill="#48cae4"/>
+  <rect x="105" y="71" width="14" height="4" rx="2" fill="#c4c4e0"/>
+
+  <!-- Middle tier details -->
+  <circle cx="65" cy="98" r="4" fill="#e63946"/>
+  <circle cx="76" cy="98" r="4" fill="#ffb703"/>
+  <circle cx="89" cy="98" r="4" fill="#48cae4"/>
+  <rect x="105" y="95" width="14" height="4" rx="2" fill="#c4c4e0"/>
+
+  <!-- Bottom tier details -->
+  <circle cx="65" cy="122" r="4" fill="#e63946"/>
+  <circle cx="76" cy="122" r="4" fill="#ffb703"/>
+  <circle cx="89" cy="122" r="4" fill="#48cae4"/>
+  <rect x="105" y="119" width="14" height="4" rx="2" fill="#c4c4e0"/>
+</svg>
