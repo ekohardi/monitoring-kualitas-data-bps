@@ -133,7 +133,7 @@ setModal(false)
     setMenu(null)
   }
   async function remove(index:number){
-    const response=await fetch('/api/users',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:users[index][5]})});
+    const response=await fetch('/api/users',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:users[index].id})});
     if(!response.ok){const result=await response.json().catch(()=>null);window.alert(result?.error||'Pengguna gagal dihapus.');return}
     setUsers(users.filter((_,i)=>i!==index));
     setMenu(null)
