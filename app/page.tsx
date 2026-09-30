@@ -68,17 +68,67 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
   return <><div className="page-heading"><div><p className="eyebrow blue">DATA MANAGEMENT</p><h1>{title}</h1><p className="muted">Satu tampilan pengecekan berdasarkan assignment_id.</p></div><button className="primary"><Plus /> Tambah Data</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari assignment, nama usaha, KBLI..." /></div><select value={status} onChange={e=>setStatus(e.target.value)}><option>Semua</option><option>Belum dicek</option><option>Selesai</option></select><button className="outline"><Upload /> Import CSV</button></div><div className="table-wrap combined-table"><table><thead><tr><th>Detail</th><th>assignment_id</th><th>Nama usaha</th><th>KBLI akhir</th><th>Pengecekan 1<br/><small>KBLI</small></th><th>Pengecekan 2<br/><small>NTB negatif</small></th><th>Pengecekan 3<br/><small>Kewajaran</small></th><th>Dicek oleh</th><th>Tanggal cek</th></tr></thead><tbody>{visible.map(row=>{const id=row[2], check=checks[id]; return <><tr key={id}><td><button className="detail-toggle" aria-label={`Detail ${id}`} onClick={()=>setExpanded(expanded===id?null:id)}><ChevronDown className={expanded===id?'rotated':''}/></button></td><td><strong>{id}</strong></td><td>{row[3]}</td><td>{row[5]}</td>{(['kbli','ntb','kewajaran'] as const).map((key,index)=><td key={key}><label className="check-cell"><input type="checkbox" checked={check[key]} onChange={()=>updateCheck(id,key)}/><span>{check[key]?'Sudah':'-'}</span></label></td>)}<td>{check.checkedBy || '-'}</td><td>{check.checkedAt || '-'}</td></tr>{expanded===id&&<tr className="details-row" key={`${id}-details`}><td colSpan={9}><div className="details-grid">{(tab==='kbli'?kbliColumns:negativeColumns).map((column,index)=><div key={column}><small>{column}</small><strong>{(tab==='kbli'?sampleKbli[0]:row)[index] || '-'}</strong></div>)}</div></td></tr>}</>})}</tbody></table></div><div className="table-footer"><span>Menampilkan {visible.length} dari {data.length} assignment</span><div><button className="page-btn">←</button><button className="page-btn selected">1</button><button className="page-btn">→</button></div></div></section></>}
 
 function UsersPage(){
-  type UserRow = [string, string, string, string, string, string, string]
-  const [users,setUsers]=useState<UserRow[]>([])
+  type UserObj = id: string; initials: string; name: string; email: string; role: string; status: string; bidang: string }
+  const [users,setUsers]=useState<UserObj[]>([])
   const [query,setQuery]=useState(''); const [role,setRole]=useState('Semua peran'); const [modal,setModal]=useState(false); const [editing,setEditing]=useState<number|null>(null); const [menu,setMenu]=useState<number|null>(null)
   const [form,setForm]=useState({name:'',email:'',username:'',password:'',bidang:'',role:'Petugas Lapangan',status:'Aktif'})
-  useEffect(()=>{fetch('/api/users').then(async response=>{if(!response.ok)throw new Error('Gagal memuat pengguna'); const data=await response.json(); setUsers(data.map((u:any)=>[u.name.slice(0,2).toUpperCase(),u.name,u.email,u.role,'Aktif',u.bidang,u.id]))}).catch(()=>window.alert('Daftar pengguna gagal dimuat dari database.'))},[])
-  const visible=users.filter(u=>(role==='Semua peran'||u[3]===role)&&`${u[1]} ${u[2]} ${u[0]}`.toLowerCase().includes(query.toLowerCase()))
-  function openForm(index?:number){if(index===undefined){setEditing(null);setForm({name:'',email:'',username:'',password:'',bidang:'',role:'Petugas Lapangan',status:'Aktif'})}else{setEditing(index);const u=users[index];setForm({name:u[1],email:u[2],username:'',password:'',role:u[3],status:u[4],bidang:u[5]})}setMenu(null);setModal(true)}
-  async function save(){if(!form.name.trim()||!form.email.trim()||editing===null&&!form.password.trim())return; if(editing===null){if(form.password.length<8){window.alert('Password minimal 8 karakter.');return} const response=await fetch('/api/users/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});if(!response.ok){const result=await response.json().catch(()=>null);window.alert(result?.error||'Pengguna gagal disimpan ke database.');return} const created=await response.json(); const initials=form.name.split(' ').map(v=>v[0]).join('').slice(0,2).toUpperCase(); setUsers(current=>[...current,[initials,form.name,form.email,form.role,form.status,created.user?.id||created.id]])}setModal(false)}
-  function toggle(index:number){setUsers(users.map((u,i)=>i===index?[u[0],u[1],u[2],u[3],u[4]==='Aktif'?'Nonaktif':'Aktif',u[5],u[6]]:u));setMenu(null)}
-  async function remove(index:number){const response=await fetch('/api/users',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:users[index][5]})});if(!response.ok){const result=await response.json().catch(()=>null);window.alert(result?.error||'Pengguna gagal dihapus.');return}setUsers(users.filter((_,i)=>i!==index));setMenu(null)}
-  return <><div className="page-heading"><div><p className="eyebrow blue">ADMINISTRASI</p><h1>Manajemen Pengguna</h1><p className="muted">Kelola akses, peran, dan pembagian tugas pengguna.</p></div><button className="primary" onClick={()=>openForm()}><Plus /> Tambah Pengguna</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nama atau email..." /></div><select value={role} onChange={e=>setRole(e.target.value)}><option>Semua peran</option><option>Administrator</option><option>Petugas Kualitas</option><option>Reviewer</option></select></div><div className="users-list">{visible.map((x)=><div className="user-row" key={x[2]}><div className="avatar">{x[0]}</div><div className="user-main"><strong>{x[1]}</strong><span>{x[2]}</span></div><span className="role">{x[3]}</span><span className={x[4]==='Aktif'?'badge done':'badge inactive'}>{x[4]}</span><div className="user-actions"><button className="more" aria-label={`Aksi ${x[1]}`} onClick={()=>setMenu(menu===users.indexOf(x)?null:users.indexOf(x))}><MoreHorizontal /></button>{menu===users.indexOf(x)&&<div className="user-menu"><button onClick={()=>openForm(users.indexOf(x))}><Pencil /> Edit pengguna</button><button onClick={()=>toggle(users.indexOf(x))}>{x[4]==='Aktif'?<UserRoundX />:<UserRoundCheck />} {x[4]==='Aktif'?'Nonaktifkan':'Aktifkan'}</button><button className="danger" onClick={()=>remove(users.indexOf(x))}><Trash2 /> Hapus pengguna</button></div>}</div></div>)}</div>{visible.length===0&&<p className="empty-users">Pengguna tidak ditemukan.</p>}<div className="table-footer"><span>Menampilkan {visible.length} dari {users.length} pengguna</span><span className="muted">Perubahan tersimpan ke daftar pengguna</span></div></section>{modal&&<div className="modal-backdrop" onClick={()=>setModal(false)}><div className="user-modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><p className="eyebrow blue">AKUN PENGGUNA</p><h2>{editing===null?'Tambah Pengguna':'Edit Pengguna'}</h2></div><button className="close-modal" onClick={()=>setModal(false)}><X /></button></div><label>Nama lengkap<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Contoh: Dwi Santoso" /></label><label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="nama@bps.go.id" /></label><label>Bidang<select value={form.bidang} onChange={e=>setForm({...form,bidang:e.target.value})}><option>Distribusi</option><option>Produksi</option><option>Sosial</option><option>Nerwilis</option><option>PLS</option><option>Umum</option></select></label><label>Password<input value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimal 8 karakter" type="password" minLength={8} required={editing===null} /></label><div className="form-grid"><label>Peran<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option>Administrator</option><option>Petugas Kualitas</option><option>Reviewer</option></select></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>Aktif</option><option>Nonaktif</option></select></label></div><div className="modal-actions"><button className="outline" onClick={()=>setModal(false)}>Batal</button><button className="primary" onClick={save}>Simpan Pengguna</button></div></div></div>}</>}
+  useEffect(()=>{fetch('/api/users').then(async response=>{if(!response.ok)throw new Error('Gagal memuat pengguna'); const data=await response.json(); setUsers(data.map((u:any)=>({
+    id: u.id,
+    initials: u.name.slice(0,2).toUpperCase(),
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    status: 'Aktif',
+    bidang: u.bidang || 'Distribusi'
+  })))
+                                                          }).catch(()=>window.alert('Daftar pengguna gagal dimuat dari database.'))},[])
+
+  const visible=users.filter(u=>(role==='Semua peran'||u.role===role)&&`${u.name} ${u.email} ${u.initials}`.toLowerCase().includes(query.toLowerCase()))
+  function openForm(index?:number){
+    if(index===undefined){
+      setEditing(null);
+      setForm({name:'',email:'',username:'',password:'',bidang:'Distribusi',role:'Petugas Lapangan',status:'Aktif'})
+    }else{
+      setEditing(index);
+      const u=users[index];
+      // Safely map object keys directly avoiding index mismatch bugs
+      setForm({
+        name:u.name,
+        email:u.email,
+        username:'',
+        password:'',
+        role:u.role,
+        status:u.status,
+        bidang:u.bidang||'Distribusi'
+      })
+    }
+    setMenu(null);
+    setModal(true)
+  }
+  async function save(){
+    if(!form.name.trim()||!form.email.trim()||editing===null&&!form.password.trim())return;
+    if(editing===null){
+      if(form.password.length<8){window.alert('Password minimal 8 karakter.');return} const response=await fetch('/api/users/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});
+      if(!response.ok){const result=await response.json().catch(()=>null);window.alert(result?.error||'Pengguna gagal disimpan ke database.');return} const created=await response.json();
+      const initials=form.name.split(' ').map(v=>v[0]).join('').slice(0,2).toUpperCase();
+      //setUsers(current=>[...current,[initials,form.name,form.email,form.role,form.status,created.user?.id||created.id]])}
+    setUsers(current=>[...current,{id: created.user?.id||created.id, initials, name: form.name, email: form.email, role: form.role, status: form.status, bidang: form.bidang}])
+  }else{
+    // Add your update logic here if editing API is implemented
+  }
+setModal(false)}
+  function toggle(index:number){
+    //setUsers(users.map((u,i)=>i===index?[u[0],u[1],u[2],u[3],u[4]==='Aktif'?'Nonaktif':'Aktif',u[5],u[6]]:u));
+    setUsers(users.map((u,i)=>i===index?{...u, status: u.status==='Aktif'?'Nonaktif':'Aktif'}:u));
+    setMenu(null)
+  }
+  async function remove(index:number){
+    const response=await fetch('/api/users',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:users[index][5]})});
+    if(!response.ok){const result=await response.json().catch(()=>null);window.alert(result?.error||'Pengguna gagal dihapus.');return}
+    setUsers(users.filter((_,i)=>i!==index));
+    setMenu(null)
+  }
+  return <><div className="page-heading"><div><p className="eyebrow blue">ADMINISTRASI</p><h1>Manajemen Pengguna</h1><p className="muted">Kelola akses, peran, dan pembagian tugas pengguna.</p></div><button className="primary" onClick={()=>openForm()}><Plus /> Tambah Pengguna</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nama atau email..." /></div><select value={role} onChange={e=>setRole(e.target.value)}><option>Semua peran</option><option>Administrator</option><option>Petugas Kualitas</option><option>Reviewer</option></select></div><div className="users-list">{visible.map((x)=><div className="user-row" key={x.email}><div className="avatar">{x.initials}</div><div className="user-main"><strong>{x.name}</strong><span>{x.email}</span></div><span className="role">{x.role}</span><span className={x.status==='Aktif'?'badge done':'badge inactive'}>{x.status}</span><div className="user-actions"><button className="more" aria-label={`Aksi ${x.name}`} onClick={()=>setMenu(menu===users.indexOf(x)?null:users.indexOf(x))}><MoreHorizontal /></button>{menu===users.indexOf(x)&&<div className="user-menu"><button onClick={()=>openForm(users.indexOf(x))}><Pencil /> Edit pengguna</button><button onClick={()=>toggle(users.indexOf(x))}>{x.status==='Aktif'?<UserRoundX />:<UserRoundCheck />} {x.status==='Aktif'?'Nonaktifkan':'Aktifkan'}</button><button className="danger" onClick={()=>remove(users.indexOf(x))}><Trash2 /> Hapus pengguna</button></div>}</div></div>)}</div>{visible.length===0&&<p className="empty-users">Pengguna tidak ditemukan.</p>}<div className="table-footer"><span>Menampilkan {visible.length} dari {users.length} pengguna</span><span className="muted">Perubahan tersimpan ke daftar pengguna</span></div></section>{modal&&<div className="modal-backdrop" onClick={()=>setModal(false)}><div className="user-modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><p className="eyebrow blue">AKUN PENGGUNA</p><h2>{editing===null?'Tambah Pengguna':'Edit Pengguna'}</h2></div><button className="close-modal" onClick={()=>setModal(false)}><X /></button></div><label>Nama lengkap<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Contoh: Dwi Santoso" /></label><label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="nama@bps.go.id" /></label><label>Bidang<select value={form.bidang} onChange={e=>setForm({...form,bidang:e.target.value})}><option>Distribusi</option><option>Produksi</option><option>Sosial</option><option>Nerwilis</option><option>PLS</option><option>Umum</option></select></label><label>Password<input value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimal 8 karakter" type="password" minLength={8} required={editing===null} /></label><div className="form-grid"><label>Peran<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option>Administrator</option><option>Petugas Kualitas</option><option>Reviewer</option></select></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>Aktif</option><option>Nonaktif</option></select></label></div><div className="modal-actions"><button className="outline" onClick={()=>setModal(false)}>Batal</button><button className="primary" onClick={save}>Simpan Pengguna</button></div></div></div>}</>}
 
 
 export default App
