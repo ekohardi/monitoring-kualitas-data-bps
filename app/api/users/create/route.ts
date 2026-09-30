@@ -13,7 +13,9 @@ export async function POST(request: Request) {
   const password = String(body.password ?? '')
   const role = String(body.role ?? 'Petugas Lapangan')
   if (!name || !email || !password || password.length < 8) return NextResponse.json({ error: 'Nama, email, dan password minimal 8 karakter wajib diisi.' }, { status: 400 })
-  const result = await auth.api.signUpEmail({ body: { name, email, password, username, role } })
+  const result = await auth.api.signUpEmail({
+    body: { name, email, password, username, role, bidang }
+  })
   // Check if Better Auth returned an error
   if (result.error) {
     return NextResponse.json({ error: result.error.message || 'Gagal mendaftarkan akun.' }, { status: 400 })
