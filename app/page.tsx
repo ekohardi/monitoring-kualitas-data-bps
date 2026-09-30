@@ -78,7 +78,7 @@ function UsersPage(){
     name: u.name,
     email: u.email,
     role: u.role,
-    status: 'Aktif',
+    status: u.status || 'Aktif',
     bidang: u.bidang || 'Distribusi'
   })))
                                                           }).catch(()=>window.alert('Daftar pengguna gagal dimuat dari database.'))},[])
