@@ -84,7 +84,7 @@ function UsersPage(){
                                                           }).catch(()=>window.alert('Daftar pengguna gagal dimuat dari database.'))},[])
 
   const visible=users.filter(u=>(role==='Semua peran'||u.role===role)&&`${u.name} ${u.email} ${u.initials}`.toLowerCase().includes(query.toLowerCase()))
-  function openForm(index?:number){
+  function openForm(index?:UserObj){
     if(index===undefined){
       setEditing(null);
       setForm({name:'',email:'',username:'',password:'',bidang:'Distribusi',role:'Petugas Lapangan',status:'Aktif'})
