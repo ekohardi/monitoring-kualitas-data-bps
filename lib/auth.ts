@@ -12,6 +12,6 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true, autoSignIn: true },
   trustedOrigins: origins,
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
-  user: { additionalFields: { username: { type: 'string', required: false }, role: { type: 'string', required: false, defaultValue: 'Petugas Lapangan' } } },
+  user: { additionalFields: { username: { type: 'string', required: false }, role: { type: 'string', required: false, defaultValue: 'Petugas Lapangan' }, bidang: { type: 'string', required: false, defaultValue: 'Distribusi' } } },
   ...(process.env.NODE_ENV === 'development' ? { advanced: { defaultCookieAttributes: { sameSite: 'none' as const, secure: true } } } : {}),
 })
