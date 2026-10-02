@@ -200,6 +200,9 @@ button { cursor: pointer; }
   .btn-download-row { display: inline-flex; align-items: center; gap: 6px; background: white; border: 1px solid #bcd1e6; color: var(--blue); font-size: 11px; font-weight: 700; padding: 6px 12px; border-radius: 6px; transition: all 0.15s ease; cursor: pointer; }
   .btn-download-row:hover { background: #e9f3fd; border-color: var(--blue); }
   .btn-download-row svg { width: 14px; height: 14px; }
+  .btn-edit-row { display: inline-flex; align-items: center; gap: 6px; background: white; border: 1px solid #fed2a4; color: #cf7013; font-size: 11px; font-weight: 700; padding: 6px 12px; border-radius: 6px; transition: all 0.15s ease; cursor: pointer; }
+  .btn-edit-row:hover { background: #fff7ed; border-color: #f28c28; }
+  .btn-edit-row svg { width: 14px; height: 14px; }
   .btn-fasih-external { display: inline-flex; align-items: center; gap: 5px; background: #edf5fc; color: var(--blue); font-size: 11px; font-weight: 600; padding: 6px 10px; border-radius: 6px; text-decoration: none; }
   .btn-fasih-external:hover { background: #dbeaf8; }
   .btn-fasih-external svg { width: 13px; height: 13px; }

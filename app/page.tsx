@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
+import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
 type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'users'
 
@@ -80,6 +80,7 @@ type CrossCheckRecord = {
     level6Name?: string
     index1?: string
     linkFasih?: string
+    extraFields?: Record<string, any>
   } | null
   ntb: {
     id?: number | string
@@ -99,6 +100,7 @@ type CrossCheckRecord = {
     sourceFile?: string
     sourceFolder?: string
     linkFasih?: string
+    extraFields?: Record<string, any>
   } | null
 }
 
@@ -124,7 +126,15 @@ function exportToCsv(filename: string, headers: string[], rows: (string | number
   URL.revokeObjectURL(url)
 }
 
-function CrossTableDetail({ item, onDownload }: { item: CrossCheckRecord; onDownload: () => void }) {
+function CrossTableDetail({
+  item,
+  onDownload,
+  onEdit
+}: {
+  item: CrossCheckRecord
+  onDownload: () => void
+  onEdit?: () => void
+}) {
   const kbliMatch = item.kbli && item.ntb ? item.kbli.kbliAkhir === item.ntb.kbliAkhir : null
   const fasihUrl = item.linkFasih && item.linkFasih !== '-' ? item.linkFasih : null
 
@@ -151,6 +161,11 @@ function CrossTableDetail({ item, onDownload }: { item: CrossCheckRecord; onDown
             <a className="btn-fasih-external" href={fasihUrl} target="_blank" rel="noreferrer" title="Buka tautan Fasih">
               <ExternalLink /> Buka Fasih
             </a>
+          )}
+          {onEdit && (
+            <button className="btn-edit-row" onClick={onEdit} title="Edit data baris ini di database">
+              <Pencil /> Edit Baris
+            </button>
           )}
           <button className="btn-download-row" onClick={onDownload} title="Unduh data baris ini dalam format CSV">
             <Download /> Unduh Baris (CSV)
@@ -246,6 +261,19 @@ function CrossTableDetail({ item, onDownload }: { item: CrossCheckRecord; onDown
                 <small>link fasih</small>
                 <strong>{item.kbli.linkFasih || '-'}</strong>
               </div>
+              {item.kbli.extraFields && Object.keys(item.kbli.extraFields).length > 0 && (
+                <div className="cross-field full">
+                  <small>kolom tambahan database (kbli)</small>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginTop: '6px' }}>
+                    {Object.entries(item.kbli.extraFields).map(([col, val]) => (
+                      <div key={col} style={{ background: '#f5f9fc', padding: '6px 8px', borderRadius: '5px', border: '1px solid #dce8f4' }}>
+                        <small style={{ color: '#748ca4', fontSize: '9px', display: 'block' }}>{col}</small>
+                        <strong style={{ fontSize: '11px', color: '#1a334d' }}>{String(val || '-')}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="cross-card-empty">Catatan tidak ditemukan di tabel kbli_checks untuk assignment ini.</div>
@@ -328,6 +356,19 @@ function CrossTableDetail({ item, onDownload }: { item: CrossCheckRecord; onDown
                 <small>link fasih</small>
                 <strong>{item.ntb.linkFasih || '-'}</strong>
               </div>
+              {item.ntb.extraFields && Object.keys(item.ntb.extraFields).length > 0 && (
+                <div className="cross-field full">
+                  <small>kolom tambahan database (ntb)</small>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginTop: '6px' }}>
+                    {Object.entries(item.ntb.extraFields).map(([col, val]) => (
+                      <div key={col} style={{ background: '#f5f9fc', padding: '6px 8px', borderRadius: '5px', border: '1px solid #dce8f4' }}>
+                        <small style={{ color: '#748ca4', fontSize: '9px', display: 'block' }}>{col}</small>
+                        <strong style={{ fontSize: '11px', color: '#1a334d' }}>{String(val || '-')}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="cross-card-empty">Catatan tidak ditemukan di tabel negative_ntb_checks untuk assignment ini.</div>
@@ -339,90 +380,80 @@ function CrossTableDetail({ item, onDownload }: { item: CrossCheckRecord; onDown
 }
 
 function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,query:string,setQuery:(s:string)=>void,status:string,setStatus:(s:any)=>void,columns:string[],rows:string[][]}) {
-  const [checks, setChecks] = useState(combinedChecks)
+  const [checks, setChecks] = useState<Record<string, CheckState>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('monitoring_checks')
+      if (saved) {
+        try { return JSON.parse(saved) } catch {}
+      }
+    }
+    return combinedChecks
+  })
   const [expandedRow, setExpandedRow] = useState<string|null>(null)
   const [crossData, setCrossData] = useState<CrossCheckRecord[]>([])
   const [loading, setLoading] = useState(false)
+  const [editItem, setEditItem] = useState<CrossCheckRecord|null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [formLoading, setFormLoading] = useState(false)
+  const [selectedKategori, setSelectedKategori] = useState('Semua Kategori')
   const title = tab==='stage3' ? 'Pembagian Stage 3' : tab==='negative' ? 'Checklist Data NTB Negatif' : 'Check Data'
 
-  useEffect(() => {
-    if (tab !== 'kbli') return
-    setLoading(true)
-    fetch('/api/check-data')
-      .then(response => response.ok ? response.json() : Promise.reject())
-      .then((items: any[]) => {
-        const transformed: CrossCheckRecord[] = items.map((item, idx) => {
-          const assignmentId = item.assignmentId || item.kbliAssignmentId || item.ntbAssignmentId || `TBN-${String(idx + 1).padStart(5, '0')}`
-          const namaUsaha = item.namaUsaha || item.kbliNamaUsaha || item.namaPrincipal || item.kbliNamaPrelist || '-'
-          const kbliAkhir = item.kbliAkhir || item.kbliAkhirKbli || item.ntbKbliAkhir || '-'
-          const linkFasih = item.linkFasih || item.kbliLinkFasih || item.ntbLinkFasih || '-'
-          const hasKbli = Boolean(item.kbliId || item.kbliAssignmentId || item.kbliNamaUsaha || item.kbliAkhir || item.kbliAkhirKbli)
-          const hasNtb = Boolean(item.ntbId || item.ntbAssignmentId || item.namaPrincipal || item.ntbCatatan || item.ntbNilaiTambah || item.ntbOmzet)
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>()
+    crossData.forEach(item => {
+      const k1 = item.kbli?.kategori?.trim()
+      const k2 = item.ntb?.kategori?.trim()
+      const k3 = item.kbli?.kategori2025?.trim()
+      if (k1 && k1 !== '-') set.add(k1)
+      if (k2 && k2 !== '-') set.add(k2)
+      if (k3 && k3 !== '-') set.add(k3)
+    })
+    return Array.from(set).sort()
+  }, [crossData])
 
-          return {
-            id: assignmentId,
-            assignmentId,
-            namaUsaha,
-            kbliAkhir,
-            linkFasih,
-            hasKbli,
-            kbli: hasKbli ? {
-              id: item.kbliId ?? '-',
-              assignmentId: item.kbliAssignmentId || assignmentId,
-              namaUsaha: item.kbliNamaUsaha || item.namaUsaha || '-',
-              namaDiPrelist: item.kbliNamaPrelist || '-',
-              kbliAkhir: item.kbliAkhirKbli || item.kbliAkhir || '-',
-              kategori: item.kbliKategori || '-',
-              kategori2025: item.kbliKategori2025 || '-',
-              kegUtama: item.kbliKegUtama || '-',
-              status: item.kbliStatus || '-',
-              assignmentStatusAlias: item.kbliAssignmentStatusAlias || '-',
-              level3FullCode: item.kbliLevel3FullCode || '-',
-              level3Name: item.kbliLevel3Name || '-',
-              level4FullCode: item.kbliLevel4FullCode || '-',
-              level4Name: item.kbliLevel4Name || '-',
-              level6FullCode: item.kbliLevel6FullCode || '-',
-              level6Name: item.kbliLevel6Name || '-',
-              index1: item.kbliIndex1 || '-',
-              linkFasih: item.kbliLinkFasih || item.linkFasih || '-',
-            } : null,
-            hasNtb,
-            ntb: hasNtb ? {
-              id: item.ntbId ?? '-',
-              assignmentId: item.ntbAssignmentId || item.assignmentId || assignmentId,
-              namaPrincipal: item.namaPrincipal || '-',
-              kategori: item.ntbKategori || '-',
-              kbliAkhir: item.ntbKbliAkhir || item.kbliAkhir || '-',
-              tahunOperasi: item.ntbTahunOperasi || '-',
-              catatan: item.ntbCatatan || '-',
-              r27aOmzet: item.ntbOmzet || '-',
-              r26cBiayaPembelian: item.ntbBiayaPembelian || '-',
-              r26bBiayaProduksi: item.ntbBiayaProduksi || '-',
-              r26dBiayaOperasional: item.ntbBiayaOperasional || '-',
-              nilaiTambah: item.ntbNilaiTambah || '-',
-              level2FullCode: item.ntbLevel2FullCode || '-',
-              level6FullCode: item.ntbLevel6FullCode || '-',
-              sourceFile: item.ntbSourceFile || '-',
-              sourceFolder: item.ntbSourceFolder || '-',
-              linkFasih: item.ntbLinkFasih || item.linkFasih || '-',
-            } : null,
-          }
-        })
-        setCrossData(transformed)
+  const fetchCheckData = () => {
+    setLoading(true)
+    fetch(`/api/check-data?_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then((items: CrossCheckRecord[]) => {
+        setCrossData(items)
       })
-      .catch(() => setCrossData([]))
+      .catch(err => {
+        console.error('Failed to load check data:', err)
+        setCrossData([])
+      })
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (tab === 'kbli') {
+      fetchCheckData()
+    }
   }, [tab])
 
-  const updateCheck = (id:string, key:keyof Pick<CheckState,'kbli'|'ntb'|'kewajaran'>) => setChecks(current => ({
-    ...current,
-    [id]: {
-      ...current[id],
-      [key]: !current[id]?.[key],
-      checkedBy: 'Admin BPS',
-      checkedAt: new Date().toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' })
-    }
-  }))
+  const updateCheck = (id:string, key:keyof Pick<CheckState,'kbli'|'ntb'|'kewajaran'>) => {
+    setChecks(current => {
+      const next = {
+        ...current,
+        [id]: {
+          ...current[id],
+          [key]: !current[id]?.[key],
+          checkedBy: 'Admin BPS',
+          checkedAt: new Date().toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' })
+        }
+      }
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('monitoring_checks', JSON.stringify(next)) } catch {}
+      }
+      return next
+    })
+  }
 
   const isComplete = (id:string) => {
     const c = checks[id]
@@ -433,11 +464,22 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
     return crossData.filter(item => {
       const matchQuery = `${item.assignmentId} ${item.namaUsaha} ${item.kbliAkhir} ${item.kbli?.kategori || ''} ${item.ntb?.catatan || ''}`.toLowerCase().includes(query.toLowerCase())
       if (!matchQuery) return false
+
+      if (selectedKategori !== 'Semua Kategori') {
+        const catKbli = (item.kbli?.kategori || '').toLowerCase()
+        const catNtb = (item.ntb?.kategori || '').toLowerCase()
+        const cat2025 = (item.kbli?.kategori2025 || '').toLowerCase()
+        const target = selectedKategori.toLowerCase()
+        if (catKbli !== target && catNtb !== target && cat2025 !== target && !catKbli.includes(target) && !catNtb.includes(target)) {
+          return false
+        }
+      }
+
       if (status === 'Semua') return true
       const complete = isComplete(item.assignmentId)
       return status === 'Selesai' ? complete : !complete
     })
-  }, [crossData, query, status, checks])
+  }, [crossData, query, status, selectedKategori, checks])
 
   const filteredRows = useMemo(() => {
     return rows.filter(row => {
@@ -531,6 +573,145 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
     exportToCsv(`cross_data_${item.assignmentId}.csv`, headers, exportRows)
   }
 
+  const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editItem) return
+    setFormLoading(true)
+    const formData = new FormData(e.currentTarget)
+    const payload = {
+      action: 'update',
+      assignmentId: editItem.assignmentId,
+      kbliData: {
+        namaUsaha: formData.get('namaUsaha') as string,
+        kbliAkhir: formData.get('kbliAkhir') as string,
+        kategori: formData.get('kategori') as string,
+        kegUtama: formData.get('kegUtama') as string,
+        status: formData.get('status') as string,
+        linkFasih: formData.get('linkFasih') as string,
+      },
+      ntbData: {
+        namaPrincipal: formData.get('namaUsaha') as string,
+        kbliAkhir: formData.get('kbliAkhir') as string,
+        kategori: formData.get('kategori') as string,
+        catatan: formData.get('catatan') as string,
+        nilaiTambah: formData.get('nilaiTambah') as string,
+        r27aOmzet: formData.get('r27aOmzet') as string,
+        linkFasih: formData.get('linkFasih') as string,
+      }
+    }
+
+    try {
+      const res = await fetch('/api/check-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) throw new Error()
+      setEditItem(null)
+      fetchCheckData()
+    } catch {
+      alert('Gagal menyimpan perubahan ke database.')
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
+  const handleAddAssignment = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setFormLoading(true)
+    const formData = new FormData(e.currentTarget)
+    const aid = (formData.get('assignmentId') as string || '').trim()
+    if (!aid) {
+      alert('Assignment ID wajib diisi.')
+      setFormLoading(false)
+      return
+    }
+
+    const payload = {
+      action: 'create',
+      assignmentId: aid,
+      kbliData: {
+        namaUsaha: formData.get('namaUsaha') as string,
+        kbliAkhir: formData.get('kbliAkhir') as string,
+        kategori: formData.get('kategori') as string,
+        kegUtama: formData.get('kegUtama') as string,
+        status: 'Belum Dicek',
+        linkFasih: formData.get('linkFasih') as string,
+      },
+      ntbData: {
+        namaPrincipal: formData.get('namaUsaha') as string,
+        kbliAkhir: formData.get('kbliAkhir') as string,
+        kategori: formData.get('kategori') as string,
+        catatan: formData.get('catatan') as string,
+        nilaiTambah: formData.get('nilaiTambah') as string,
+        r27aOmzet: formData.get('r27aOmzet') as string,
+        linkFasih: formData.get('linkFasih') as string,
+      }
+    }
+
+    try {
+      const res = await fetch('/api/check-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) throw new Error()
+      setShowAddModal(false)
+      fetchCheckData()
+    } catch {
+      alert('Gagal menambahkan assignment ke database.')
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
+  const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      const text = evt.target?.result as string
+      if (!text) return
+      const lines = text.split(/\r?\n/).filter(l => l.trim() !== '')
+      if (lines.length < 2) {
+        alert('File CSV kosong atau tidak memiliki baris data.')
+        return
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase())
+      const rows = lines.slice(1).map(line => {
+        const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''))
+        const obj: Record<string, string> = {}
+        headers.forEach((h, idx) => {
+          obj[h] = parts[idx] || ''
+        })
+        return obj
+      })
+
+      try {
+        setLoading(true)
+        const res = await fetch('/api/check-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'import', rows })
+        })
+        const result = await res.json()
+        if (res.ok) {
+          alert(result.message || 'Import data berhasil!')
+          fetchCheckData()
+        } else {
+          alert(result.error || 'Gagal mengimpor data ke database.')
+        }
+      } catch {
+        alert('Gagal menghubungi server untuk import.')
+      } finally {
+        setLoading(false)
+        if (e.target) e.target.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
   const activeCount = tab === 'kbli' ? filteredCrossData.length : filteredRows.length
   const totalCount = tab === 'kbli' ? crossData.length : rows.length
 
@@ -542,11 +723,13 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
           <h1>{title}</h1>
           <p className="muted">
             {tab === 'kbli'
-              ? 'Pengecekan cross table hasil penggabungan kbli_checks dan negative_ntb_checks berdasarkan assignment_id.'
+              ? 'Pengecekan cross table hasil penggabungan kbli_checks dan negative_ntb_checks dari database PostgreSQL.'
               : 'Satu tampilan pengecekan berdasarkan assignment_id.'}
           </p>
         </div>
-        <button className="primary"><Plus /> Tambah Data</button>
+        <button className="primary" onClick={() => setShowAddModal(true)}>
+          <Plus /> Tambah Data
+        </button>
       </div>
 
       <section className="panel table-panel">
@@ -564,10 +747,44 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
             <option>Belum dicek</option>
             <option>Selesai</option>
           </select>
+          {tab === 'kbli' && (
+            <select
+              value={selectedKategori}
+              onChange={e => setSelectedKategori(e.target.value)}
+              title="Filter berdasarkan kategori usaha"
+            >
+              <option value="Semua Kategori">Semua Kategori</option>
+              {availableCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          )}
+          {tab === 'kbli' && (
+            <button className="outline" onClick={fetchCheckData} title="Segarkan data dari database">
+              <RotateCw className={loading ? 'rotated' : ''} /> Segarkan
+            </button>
+          )}
           <button className="outline" onClick={downloadAllData} title="Unduh data tabel dalam format CSV">
             <Download /> Unduh Data ({activeCount})
           </button>
-          <button className="outline"><Upload /> Import CSV</button>
+          {tab === 'kbli' && (
+            <>
+              <input
+                id="csv-file-input"
+                type="file"
+                accept=".csv"
+                style={{ display: 'none' }}
+                onChange={handleCsvImport}
+              />
+              <button
+                className="outline"
+                onClick={() => document.getElementById('csv-file-input')?.click()}
+                title="Import data CSV ke database PostgreSQL"
+              >
+                <Upload /> Import CSV
+              </button>
+            </>
+          )}
         </div>
 
         <div className="table-wrap combined-table">
@@ -589,12 +806,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="empty-users">Memuat data hasil cross join kbli_checks & negative_ntb_checks...</td>
+                  <td colSpan={10} className="empty-users">Memuat data live dari database PostgreSQL...</td>
                 </tr>
               ) : tab === 'kbli' ? (
                 filteredCrossData.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-users">Data tidak ditemukan.</td>
+                    <td colSpan={10} className="empty-users">Data tidak ditemukan di database.</td>
                   </tr>
                 ) : (
                   filteredCrossData.map((item, rowIndex) => {
@@ -653,6 +870,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
                             <td colSpan={10}>
                               <CrossTableDetail
                                 item={item}
+                                onEdit={() => setEditItem(item)}
                                 onDownload={() => downloadSingleRow(item)}
                               />
                             </td>
@@ -745,6 +963,127 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
           </div>
         </div>
       </section>
+
+      {/* MODAL EDIT DATA BARIS */}
+      {editItem && (
+        <div className="modal-backdrop" onClick={() => setEditItem(null)}>
+          <div className="user-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '620px' }}>
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow blue">PERBARUI DATABASE</p>
+                <h2>Edit Data: {editItem.assignmentId}</h2>
+              </div>
+              <button className="close-modal" onClick={() => setEditItem(null)}><X /></button>
+            </div>
+            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-grid">
+                <label>Assignment ID
+                  <input value={editItem.assignmentId} disabled style={{ background: '#f5f7fa', color: '#688096' }} />
+                </label>
+                <label>Nama Usaha *
+                  <input name="namaUsaha" required defaultValue={editItem.namaUsaha} />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label>KBLI Akhir
+                  <input name="kbliAkhir" defaultValue={editItem.kbliAkhir} />
+                </label>
+                <label>Kategori
+                  <input name="kategori" defaultValue={editItem.kbli?.kategori || editItem.ntb?.kategori || ''} />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label>Nilai Tambah (NTB)
+                  <input name="nilaiTambah" defaultValue={editItem.ntb?.nilaiTambah || '0'} />
+                </label>
+                <label>R27A Omzet
+                  <input name="r27aOmzet" defaultValue={editItem.ntb?.r27aOmzet || '0'} />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label>Status KBLI
+                  <select name="status" defaultValue={editItem.kbli?.status || 'Belum Dicek'}>
+                    <option value="Belum Dicek">Belum Dicek</option>
+                    <option value="Perlu Konfirmasi">Perlu Konfirmasi</option>
+                    <option value="Selesai Dicek">Selesai Dicek</option>
+                  </select>
+                </label>
+                <label>Link Fasih (URL)
+                  <input name="linkFasih" defaultValue={editItem.linkFasih} />
+                </label>
+              </div>
+              <label>Kegiatan Utama (KBLI)
+                <input name="kegUtama" defaultValue={editItem.kbli?.kegUtama || ''} />
+              </label>
+              <label>Catatan Pemeriksaan (NTB)
+                <input name="catatan" defaultValue={editItem.ntb?.catatan || ''} />
+              </label>
+              <div className="modal-actions">
+                <button type="button" className="outline" onClick={() => setEditItem(null)}>Batal</button>
+                <button type="submit" className="primary" disabled={formLoading}>
+                  {formLoading ? 'Menyimpan...' : 'Perbarui Database'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH DATA ASSIGNMENT */}
+      {showAddModal && (
+        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
+          <div className="user-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '620px' }}>
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow blue">DATA BARU</p>
+                <h2>Tambah Assignment ke Database</h2>
+              </div>
+              <button className="close-modal" onClick={() => setShowAddModal(false)}><X /></button>
+            </div>
+            <form onSubmit={handleAddAssignment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-grid">
+                <label>Assignment ID *
+                  <input name="assignmentId" required placeholder="Contoh: TBN-00130" />
+                </label>
+                <label>Nama Usaha *
+                  <input name="namaUsaha" required placeholder="Contoh: Toko Berkah Baru" />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label>KBLI Akhir
+                  <input name="kbliAkhir" placeholder="Contoh: 47111" />
+                </label>
+                <label>Kategori
+                  <input name="kategori" defaultValue="Perdagangan" placeholder="Contoh: Perdagangan" />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label>Nilai Tambah (NTB)
+                  <input name="nilaiTambah" defaultValue="0" placeholder="Contoh: 2.500.000 atau 0" />
+                </label>
+                <label>R27A Omzet
+                  <input name="r27aOmzet" defaultValue="0" placeholder="Contoh: 10.000.000" />
+                </label>
+              </div>
+              <label>Kegiatan Utama (KBLI)
+                <input name="kegUtama" placeholder="Deskripsi aktivitas usaha" />
+              </label>
+              <label>Catatan (NTB)
+                <input name="catatan" placeholder="Catatan konfirmasi atau validasi lapangan" />
+              </label>
+              <label>Link Fasih (URL)
+                <input name="linkFasih" placeholder="https://fasih.bps.go.id/survey/..." />
+              </label>
+              <div className="modal-actions">
+                <button type="button" className="outline" onClick={() => setShowAddModal(false)}>Batal</button>
+                <button type="submit" className="primary" disabled={formLoading}>
+                  {formLoading ? 'Menyimpan...' : 'Simpan ke Database'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   )
 }
