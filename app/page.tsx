@@ -17,8 +17,8 @@ const sampleNegative = [
 ]
 
 function Login({ onLogin }: { onLogin: () => void }) {
-  const [identifier, setIdentifier] = useState('admin')
-  const [password, setPassword] = useState('admin123')
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   async function submit() {
     setError('')
@@ -29,7 +29,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
     if (result.error) setError('Username/email atau password tidak valid.')
     else onLogin()
   }
-  return <main className="login-shell"><div className="login-art"><div className="brand-mark">BPS</div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan email atau username untuk melanjutkan.</p><label>Email atau username</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="admin atau nama@bps.go.id" /><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" />{error&&<p className="error-text">{error}</p>}<button className="primary full" onClick={submit}>Masuk <span>→</span></button><p className="demo-note">Akun utama: admin / admin123</p></div></main>
+  return <main className="login-shell"><div className="login-art"><div className="brand-mark">BPS</div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan email atau username untuk melanjutkan.</p><label>Email atau username</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="admin atau nama@bps.go.id" /><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" />{error&&<p className="error-text">{error}</p>}<button className="primary full" onClick={submit}>Masuk <span>→</span></button></div></main>
 }
 
 function App() {
