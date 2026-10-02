@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { kbliChecks, negativeNtbChecks } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
@@ -13,6 +14,7 @@ export async function GET() {
       ntbNilaiTambah: negativeNtbChecks.nilaiTambah,
       ntbLinkFasih: negativeNtbChecks.linkFasih,
       kbliId: kbliChecks.id,
+      kbliAssignmentId: kbliChecks.assignmentId,
       kbliNamaUsaha: kbliChecks.namaUsaha,
       kbliAkhir: kbliChecks.kbliAkhir,
       kbliNamaPrelist: kbliChecks.namaDiPrelist,
@@ -22,7 +24,7 @@ export async function GET() {
       kbliLinkFasih: kbliChecks.linkFasih,
     })
     .from(negativeNtbChecks)
-    .crossJoin(kbliChecks)
+    .leftJoin(kbliChecks, eq(negativeNtbChecks.assignmentId, kbliChecks.assignmentId))
     .limit(1000)
 
   return NextResponse.json(rows)
