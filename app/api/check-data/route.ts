@@ -24,7 +24,7 @@ export async function GET() {
       kbliLinkFasih: kbliChecks.linkFasih,
     })
     .from(negativeNtbChecks)
-    .leftJoin(kbliChecks, eq(negativeNtbChecks.assignmentId, kbliChecks.assignmentId))
+    .fullJoin(kbliChecks, eq(negativeNtbChecks.assignmentId, kbliChecks.assignmentId))
     .limit(1000)
 
   return NextResponse.json(rows)
