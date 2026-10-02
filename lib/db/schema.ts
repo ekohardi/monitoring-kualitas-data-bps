@@ -48,5 +48,45 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updatedAt'),
 })
 
+export const kbliChecks = pgTable('kbli_checks', {
+  id: integer('id').primaryKey(),
+  level3FullCode: text('level_3_full_code'),
+  level3Name: text('level_3_name'),
+  level4FullCode: text('level_4_full_code'),
+  level4Name: text('level_4_name'),
+  level6FullCode: text('level_6_full_code'),
+  level6Name: text('level_6_name'),
+  assignmentStatusAlias: text('assignment_status_alias'),
+  status: text('status'),
+  namaDiPrelist: text('nama_di_prelist'),
+  namaUsaha: text('nama_usaha'),
+  kategori: text('kategori'),
+  kategori2025: text('kategori_2025'),
+  kbliAkhir: text('kbli_akhir'),
+  kegUtama: text('keg_utama'),
+  index1: text('index1'),
+  linkFasih: text('link_fasih'),
+})
+
+export const negativeNtbChecks = pgTable('negative_ntb_checks', {
+  id: integer('id').primaryKey(),
+  level2FullCode: text('level_2_full_code'),
+  level6FullCode: text('level_6_full_code'),
+  assignmentId: text('assignment_id'),
+  namaPrincipal: text('nama_principal'),
+  kategori: text('kategori'),
+  kbliAkhir: text('kbli_akhir'),
+  tahunOperasi: integer('tahun_operasi'),
+  catatan: text('catatan'),
+  r27aOmzet: text('r27a_omzet'),
+  r26cBiayaPembelian: text('r26c_biaya_pembelian'),
+  r26bBiayaProduksi: text('r26b_biaya_produksi'),
+  r26dBiayaOperasional: text('r26d_biaya_operasional'),
+  nilaiTambah: text('nilai_tambah'),
+  linkFasih: text('link_fasih'),
+  sourceFile: text('source_file'),
+  sourceFolder: text('source_folder'),
+})
+
 export const managedUser = user
 export type ManagedUser = typeof user.$inferSelect
