@@ -29,7 +29,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
     if (result.error) setError('Username/email atau password tidak valid.')
     else onLogin()
   }
-  return <main className="login-shell"><div className="login-art"><div className="brand-mark">BPS</div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan email atau username untuk melanjutkan.</p><label>Email atau username</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="admin atau nama@bps.go.id" /><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" />{error&&<p className="error-text">{error}</p>}<button className="primary full" onClick={submit}>Masuk <span>→</span></button></div></main>
+  return <main className="login-shell"><div className="login-art"><div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}><img src="/icon.svg" alt="Logo BPS" style={{ width: 46, height: 46 }} /><div className="brand-mark">BPS</div></div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan email atau username untuk melanjutkan.</p><label>Email atau username</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="admin atau nama@bps.go.id" /><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" />{error&&<p className="error-text">{error}</p>}<button className="primary full" onClick={submit}>Masuk <span>→</span></button></div></main>
 }
 
 function App() {
@@ -42,11 +42,221 @@ function App() {
   if (!loggedIn) return <Login onLogin={()=>setLoggedIn(true)} />
   const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'stage3',label:'Pembagian Stage 3',icon:BarChart3},{id:'kbli',label:'Check Data',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
   const tableCols = tab === 'kbli' ? kbliColumns : negativeColumns
-  return <div className="app-shell"><aside className={mobileOpen?'sidebar open':'sidebar'}><div className="side-brand"><div className="brand-mark small">BPS</div><div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div><button className="close-nav" onClick={()=>setMobileOpen(false)}><X /></button></div><div className="side-section">MENU UTAMA</div><nav>{nav.map(item=>{const Icon=item.icon; return <button key={item.id} className={tab===item.id?'nav-item active':'nav-item'} onClick={()=>{setTab(item.id);setMobileOpen(false)}}><Icon />{item.label}{item.id==='negative'&&<b>12</b>}</button>})}</nav><div className="sidebar-bottom"><button className="nav-item"><Settings /> Pengaturan</button><button className="nav-item logout" onClick={()=>setLoggedIn(false)}><LogOut /> Keluar</button></div></aside><div className="main-area"><header><button className="menu-btn" onClick={()=>setMobileOpen(true)}><Menu /></button><div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div><div className="header-actions"><button className="icon-button"><Search /></button><div className="profile"><div className="avatar">AR</div><div><strong>Admin BPS</strong><span>Administrator</span></div><ChevronDown /></div></div></header><main className="content">{tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus}/>}</main></div></div>
+  return <div className="app-shell"><aside className={mobileOpen?'sidebar open':'sidebar'}><div className="side-brand"><img src="/icon.svg" alt="Logo BPS" style={{ width: 34, height: 34, flexShrink: 0 }} /><div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div><button className="close-nav" onClick={()=>setMobileOpen(false)}><X /></button></div><div className="side-section">MENU UTAMA</div><nav>{nav.map(item=>{const Icon=item.icon; return <button key={item.id} className={tab===item.id?'nav-item active':'nav-item'} onClick={()=>{setTab(item.id);setMobileOpen(false)}}><Icon />{item.label}{item.id==='negative'&&<b>12</b>}</button>})}</nav><div className="sidebar-bottom"><button className="nav-item"><Settings /> Pengaturan</button><button className="nav-item logout" onClick={()=>setLoggedIn(false)}><LogOut /> Keluar</button></div></aside><div className="main-area"><header><button className="menu-btn" onClick={()=>setMobileOpen(true)}><Menu /></button><div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div><div className="header-actions"><button className="icon-button"><Search /></button><div className="profile"><div className="avatar">AR</div><div><strong>Admin BPS</strong><span>Administrator</span></div><ChevronDown /></div></div></header><main className="content">{tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus}/>}</main></div></div>
 }
 
-function Dashboard({setTab}:{setTab:(t:Tab)=>void}) { return <><div className="page-heading"><div><p className="eyebrow blue">OVERVIEW</p><h1>Ringkasan Kualitas Data</h1><p className="muted">Pantau progres validasi data BPS Kabupaten Tuban.</p></div><button className="primary" onClick={()=>setTab('negative')}><Upload /> Import Data</button></div><div className="stats"><Stat title="Total Assignment" value="1.248" change="+12,5%" icon={Database} tone="blue"/><Stat title="Sudah Dicek" value="936" change="75%" icon={CheckCircle2} tone="green"/><Stat title="Perlu Tindak Lanjut" value="312" change="25%" icon={FileCheck2} tone="orange"/></div><div className="grid-two"><section className="panel progress-panel"><div className="panel-head"><div><h3>Progress Validasi</h3><p className="muted">Status pemeriksaan seluruh data</p></div><span className="period">2025 <ChevronDown /></span></div><div className="big-progress"><div className="progress-ring"><strong>75%</strong><span>selesai</span></div><div className="legend"><div><i className="dot blue-dot"/>Sudah dicek <b>936</b></div><div><i className="dot orange-dot"/>Belum dicek <b>312</b></div><div><i className="dot gray-dot"/>Tidak aktif <b>0</b></div></div></div></section><section className="panel stage-panel"><div className="panel-head"><div><h3>Pembagian Stage 3</h3><p className="muted">Distribusi assignment per petugas</p></div><button className="text-button" onClick={()=>setTab('stage3')}>Lihat semua →</button></div>{[['Petugas Lapangan A','186','83%'],['Petugas Lapangan B','154','71%'],['Petugas Lapangan C','128','64%'],['Petugas Lapangan D','96','52%']].map(x=><div className="person-progress" key={x[0]}><div><span>{x[0]}</span><b>{x[1]} data</b></div><div className="bar"><i style={{width:x[2]}}/></div><small>{x[2]}</small></div>)}</section></div><section className="panel activity"><div className="panel-head"><div><h3>Aktivitas Terbaru</h3><p className="muted">Pembaruan data terakhir</p></div><button className="text-button">Lihat log →</button></div><div className="activity-list">{[['AR','Admin Rina','mengunggah 248 data NTB Negatif','8 menit lalu'],['DS','Dwi Santoso','menyelesaikan checklist KBLI','32 menit lalu'],['LP','Lina Putri','ditambahkan ke Stage 3','1 jam lalu']].map(x=><div className="activity-item" key={x[1]}><div className="avatar soft">{x[0]}</div><div><strong>{x[1]}</strong> <span>{x[2]}</span><small>{x[3]}</small></div></div>)}</div></section></> }
-function Stat({title,value,change,icon:Icon,tone}:{title:string,value:string,change:string,icon:any,tone:string}){return <div className={'stat stat-'+tone}><div className="stat-icon"><Icon /></div><div><p>{title}</p><h2>{value}</h2><span>{change} <em>dari bulan lalu</em></span></div></div>}
+function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
+  const [data, setData] = useState<{
+    totalAssignment: number
+    sudahDicek: number
+    belumDicek: number
+    perluTindakLanjut: number
+    percentComplete: number
+    stageOfficers: Array<{ name: string; count: string; percent: string; percentNum?: number }>
+    activities: Array<{ initials: string; name: string; action: string; time: string }>
+  }>({
+    totalAssignment: 0,
+    sudahDicek: 0,
+    belumDicek: 0,
+    perluTindakLanjut: 0,
+    percentComplete: 0,
+    stageOfficers: [],
+    activities: [],
+  })
+  const [loading, setLoading] = useState(true)
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/dashboard?_t=${Date.now()}`, { cache: 'no-store' })
+      if (res.ok) {
+        const json = await res.json()
+        setData(json)
+      }
+    } catch (e) {
+      console.error('Failed to load dashboard data:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow blue">OVERVIEW</p>
+          <h1>Ringkasan Kualitas Data</h1>
+          <p className="muted">Pantau progres validasi data BPS Kabupaten Tuban secara realtime.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            className="outline"
+            onClick={loadData}
+            title="Muat ulang data dari database"
+            disabled={loading}
+            style={{ cursor: loading ? 'wait' : 'pointer' }}
+          >
+            <RotateCw className={loading ? 'animate-spin' : ''} style={{ width: 14, height: 14 }} />
+            <span>{loading ? 'Memuat...' : 'Refresh'}</span>
+          </button>
+          <button className="primary" onClick={() => setTab('kbli')}>
+            <Database style={{ width: 15, height: 15 }} /> Check Data
+          </button>
+        </div>
+      </div>
+
+      <div className="stats">
+        <Stat
+          title="Total Assignment"
+          value={data.totalAssignment.toLocaleString('id-ID')}
+          change={`${data.totalAssignment > 0 ? '+' : ''}${data.totalAssignment}`}
+          icon={Database}
+          tone="blue"
+          subtext="total assignment"
+        />
+        <Stat
+          title="Sudah Dicek"
+          value={data.sudahDicek.toLocaleString('id-ID')}
+          change={`${data.percentComplete}%`}
+          icon={CheckCircle2}
+          tone="green"
+          subtext="terselesaikan"
+        />
+        <Stat
+          title="Perlu Tindak Lanjut"
+          value={data.perluTindakLanjut.toLocaleString('id-ID')}
+          change={`${data.perluTindakLanjut}`}
+          icon={FileCheck2}
+          tone="orange"
+          subtext="perlu konfirmasi/NTB"
+        />
+      </div>
+
+      <div className="grid-two">
+        <section className="panel progress-panel">
+          <div className="panel-head">
+            <div>
+              <h3>Progress Validasi</h3>
+              <p className="muted">Status pemeriksaan seluruh data</p>
+            </div>
+            <span className="period">2025 <ChevronDown /></span>
+          </div>
+          <div className="big-progress">
+            <div
+              className="progress-ring"
+              style={{
+                background: `conic-gradient(var(--blue) ${data.percentComplete}%, #e8eff5 0)`
+              }}
+            >
+              <strong>{data.percentComplete}%</strong>
+              <span>selesai</span>
+            </div>
+            <div className="legend">
+              <div>
+                <i className="dot blue-dot" />
+                Sudah dicek <b>{data.sudahDicek.toLocaleString('id-ID')}</b>
+              </div>
+              <div>
+                <i className="dot orange-dot" />
+                Belum dicek <b>{data.belumDicek.toLocaleString('id-ID')}</b>
+              </div>
+              <div>
+                <i className="dot gray-dot" />
+                Perlu tindak lanjut <b>{data.perluTindakLanjut.toLocaleString('id-ID')}</b>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel stage-panel">
+          <div className="panel-head">
+            <div>
+              <h3>Pembagian Stage 3</h3>
+              <p className="muted">Distribusi assignment per petugas</p>
+            </div>
+            <button className="text-button" onClick={() => setTab('stage3')}>Lihat semua →</button>
+          </div>
+          {data.stageOfficers && data.stageOfficers.length > 0 ? (
+            data.stageOfficers.map((x, idx) => (
+              <div className="person-progress" key={idx}>
+                <div>
+                  <span>{x.name}</span>
+                  <b>{x.count}</b>
+                </div>
+                <div className="bar">
+                  <i style={{ width: x.percent }} />
+                </div>
+                <small>{x.percent}</small>
+              </div>
+            ))
+          ) : (
+            <p className="muted" style={{ padding: '20px 0', fontSize: '12px' }}>
+              {loading ? 'Mengambil data petugas...' : 'Tidak ada data petugas.'}
+            </p>
+          )}
+        </section>
+      </div>
+
+      <section className="panel activity">
+        <div className="panel-head">
+          <div>
+            <h3>Aktivitas Terbaru</h3>
+            <p className="muted">Pembaruan data dari tabel sistem</p>
+          </div>
+          <button className="text-button" onClick={loadData}>Perbarui log ↻</button>
+        </div>
+        <div className="activity-list">
+          {data.activities && data.activities.length > 0 ? (
+            data.activities.map((x, idx) => (
+              <div className="activity-item" key={idx}>
+                <div className="avatar soft">{x.initials}</div>
+                <div>
+                  <strong>{x.name}</strong> <span>{x.action}</span>
+                  <small>{x.time}</small>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="muted" style={{ padding: '12px 0', fontSize: '12px' }}>
+              {loading ? 'Mengambil aktivitas terbaru...' : 'Belum ada aktivitas tercatat.'}
+            </p>
+          )}
+        </div>
+      </section>
+    </>
+  )
+}
+
+function Stat({
+  title,
+  value,
+  change,
+  icon: Icon,
+  tone,
+  subtext = 'dari database',
+}: {
+  title: string
+  value: string
+  change: string
+  icon: any
+  tone: string
+  subtext?: string
+}) {
+  return (
+    <div className={'stat stat-' + tone}>
+      <div className="stat-icon"><Icon /></div>
+      <div>
+        <p>{title}</p>
+        <h2>{value}</h2>
+        <span>{change} <em>{subtext}</em></span>
+      </div>
+    </div>
+  )
+}
 type CheckState = { kbli: boolean; ntb: boolean; kewajaran: boolean; checkedBy?: string; checkedAt?: string }
 const combinedChecks: Record<string, CheckState> = {
   'TBN-00124': { kbli: true, ntb: false, kewajaran: false, checkedBy: 'Admin Rina', checkedAt: '30 Sep 2026, 09:42' },

@@ -305,6 +305,14 @@ async function ensureTables() {
     ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS nama_principal TEXT;
     ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS nilai_tambah TEXT;
     ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS catatan TEXT;
+
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id SERIAL PRIMARY KEY,
+      user_initials TEXT,
+      user_name TEXT,
+      action_text TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `)
 
   // Check if tables are completely empty; if so, populate initial seed so database has live data
@@ -574,6 +582,11 @@ export async function POST(request: Request) {
         importedCount++
       }
 
+      await pool.query(`
+        INSERT INTO activity_logs (user_initials, user_name, action_text)
+        VALUES ($1, $2, $3)
+      `, ['AD', 'Admin BPS', `Mengimpor ${importedCount} data assignment ke sistem`]).catch(() => null)
+
       return NextResponse.json({ ok: true, count: importedCount, message: `Berhasil mengimpor ${importedCount} data.` })
     }
 
@@ -625,6 +638,13 @@ export async function POST(request: Request) {
         ])
       }
 
+      const usahaTitle = kbliData?.namaUsaha || ntbData?.namaPrincipal || assignmentId
+      const statusSuffix = kbliData?.status ? ` menjadi "${kbliData.status}"` : ''
+      await pool.query(`
+        INSERT INTO activity_logs (user_initials, user_name, action_text)
+        VALUES ($1, $2, $3)
+      `, ['PL', 'Petugas BPS', `Memperbarui data ${usahaTitle}${statusSuffix}`]).catch(() => null)
+
       return NextResponse.json({ ok: true, message: `Data untuk assignment ${assignmentId} berhasil diperbarui.` })
     }
 
@@ -660,6 +680,12 @@ export async function POST(request: Request) {
         ntbData?.r27aOmzet || '0',
         ntbData?.linkFasih || kbliData?.linkFasih || '-'
       ])
+
+      const newUsaha = kbliData?.namaUsaha || assignmentId
+      await pool.query(`
+        INSERT INTO activity_logs (user_initials, user_name, action_text)
+        VALUES ($1, $2, $3)
+      `, ['AD', 'Admin BPS', `Menambahkan assignment baru ${assignmentId} (${newUsaha})`]).catch(() => null)
 
       return NextResponse.json({ ok: true, message: `Assignment ${assignmentId} berhasil ditambahkan ke database.` })
     }
