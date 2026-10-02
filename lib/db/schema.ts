@@ -66,6 +66,7 @@ export const kbliChecks = pgTable('kbli_checks', {
   kegUtama: text('keg_utama'),
   index1: text('index1'),
   linkFasih: text('link_fasih'),
+  assignmentId: text('assignment_id'),
 })
 
 export const negativeNtbChecks = pgTable('negative_ntb_checks', {
