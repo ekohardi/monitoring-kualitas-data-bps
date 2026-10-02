@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import { BarChart3, CheckCircle2, ChevronDown, Database, Eye, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
+import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
 type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'users'
 
@@ -57,39 +57,701 @@ const combinedChecks: Record<string, CheckState> = {
   'TBN-00125': { kbli: true, ntb: true, kewajaran: false, checkedBy: 'Dwi Santoso', checkedAt: '30 Sep 2026, 10:15' },
   'TBN-00126': { kbli: false, ntb: false, kewajaran: false },
 }
+type CrossCheckRecord = {
+  id: string
+  assignmentId: string
+  namaUsaha: string
+  kbliAkhir: string
+  linkFasih: string
+  hasKbli: boolean
+  hasNtb: boolean
+  kbli: {
+    id?: number | string
+    assignmentId?: string
+    namaUsaha?: string
+    namaDiPrelist?: string
+    kbliAkhir?: string
+    kategori?: string
+    kategori2025?: string
+    kegUtama?: string
+    status?: string
+    assignmentStatusAlias?: string
+    level3FullCode?: string
+    level3Name?: string
+    level4FullCode?: string
+    level4Name?: string
+    level6FullCode?: string
+    level6Name?: string
+    index1?: string
+    linkFasih?: string
+  } | null
+  ntb: {
+    id?: number | string
+    assignmentId?: string
+    namaPrincipal?: string
+    kategori?: string
+    kbliAkhir?: string
+    tahunOperasi?: number | string
+    catatan?: string
+    r27aOmzet?: string
+    r26cBiayaPembelian?: string
+    r26bBiayaProduksi?: string
+    r26dBiayaOperasional?: string
+    nilaiTambah?: string
+    level2FullCode?: string
+    level6FullCode?: string
+    sourceFile?: string
+    sourceFolder?: string
+    linkFasih?: string
+  } | null
+}
+
+function exportToCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
+  const escapeCsv = (val: any) => {
+    if (val === null || val === undefined) return '""'
+    const str = String(val).replace(/"/g, '""')
+    return `"${str}"`
+  }
+  const content = [
+    headers.map(escapeCsv).join(','),
+    ...rows.map(row => row.map(escapeCsv).join(','))
+  ].join('\r\n')
+
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function CrossTableDetail({ item, onDownload }: { item: CrossCheckRecord; onDownload: () => void }) {
+  const kbliMatch = item.kbli && item.ntb ? item.kbli.kbliAkhir === item.ntb.kbliAkhir : null
+  const fasihUrl = item.linkFasih && item.linkFasih !== '-' ? item.linkFasih : null
+
+  return (
+    <div className="cross-table-container">
+      <div className="cross-table-topbar">
+        <div className="cross-table-title">
+          <strong>Detail Cross Table: {item.assignmentId}</strong>
+          {item.hasKbli && item.hasNtb ? (
+            <span className="match-badge matched">Terhubung di Kedua Tabel</span>
+          ) : item.hasKbli ? (
+            <span className="match-badge single">Tercatat di KBLI Checks Saja</span>
+          ) : (
+            <span className="match-badge single">Tercatat di NTB Negatif Saja</span>
+          )}
+          {kbliMatch !== null && (
+            <span className={`match-badge ${kbliMatch ? 'matched' : 'mismatch'}`}>
+              {kbliMatch ? `KBLI Selaras (${item.kbli?.kbliAkhir})` : `KBLI Berbeda: ${item.kbli?.kbliAkhir || '-'} vs ${item.ntb?.kbliAkhir || '-'}`}
+            </span>
+          )}
+        </div>
+        <div className="cross-table-actions">
+          {fasihUrl && (
+            <a className="btn-fasih-external" href={fasihUrl} target="_blank" rel="noreferrer" title="Buka tautan Fasih">
+              <ExternalLink /> Buka Fasih
+            </a>
+          )}
+          <button className="btn-download-row" onClick={onDownload} title="Unduh data baris ini dalam format CSV">
+            <Download /> Unduh Baris (CSV)
+          </button>
+        </div>
+      </div>
+
+      <div className="cross-compare-banner">
+        <div className="compare-item">
+          <span>Assignment ID:</span>
+          <strong>{item.assignmentId}</strong>
+        </div>
+        <div className="compare-item">
+          <span>Nama Usaha:</span>
+          <strong>{item.namaUsaha}</strong>
+        </div>
+        <div className="compare-item">
+          <span>KBLI Akhir (KBLI vs NTB):</span>
+          <strong>{item.kbli?.kbliAkhir || '-'} / {item.ntb?.kbliAkhir || '-'}</strong>
+        </div>
+        <div className="compare-item">
+          <span>Nilai Tambah:</span>
+          <strong style={{ color: (item.ntb?.nilaiTambah || '').includes('-') ? '#c43838' : '#19324d' }}>
+            {item.ntb?.nilaiTambah || '-'}
+          </strong>
+        </div>
+      </div>
+
+      <div className="cross-cards-grid">
+        {/* KBLI CHECKS CARD */}
+        <div className="cross-card">
+          <div className="cross-card-header">
+            <div className="cross-card-title">
+              <Database /> Data Tabel KBLI Checks (kbli_checks)
+            </div>
+            {item.hasKbli ? (
+              <span className="badge done">{item.kbli?.status || 'Tersedia'}</span>
+            ) : (
+              <span className="badge inactive">Tidak Ada Data</span>
+            )}
+          </div>
+          {item.hasKbli && item.kbli ? (
+            <div className="cross-fields-grid">
+              <div className="cross-field">
+                <small>assignment_id</small>
+                <strong>{item.kbli.assignmentId || item.assignmentId}</strong>
+              </div>
+              <div className="cross-field">
+                <small>status penugasan</small>
+                <strong>{item.kbli.assignmentStatusAlias || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>nama di prelist</small>
+                <strong>{item.kbli.namaDiPrelist || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>nama usaha</small>
+                <strong>{item.kbli.namaUsaha || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>kategori</small>
+                <strong>{item.kbli.kategori || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>kategori 2025</small>
+                <strong>{item.kbli.kategori2025 || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>kbli akhir</small>
+                <strong>{item.kbli.kbliAkhir || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>index1</small>
+                <strong>{item.kbli.index1 || '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>kegiatan utama</small>
+                <strong>{item.kbli.kegUtama || '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>level 3 (kode & nama)</small>
+                <strong>{item.kbli.level3FullCode ? `${item.kbli.level3FullCode} - ${item.kbli.level3Name}` : '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>level 4 (kode & nama)</small>
+                <strong>{item.kbli.level4FullCode ? `${item.kbli.level4FullCode} - ${item.kbli.level4Name}` : '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>level 6 (kode & nama)</small>
+                <strong>{item.kbli.level6FullCode ? `${item.kbli.level6FullCode} - ${item.kbli.level6Name}` : '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>link fasih</small>
+                <strong>{item.kbli.linkFasih || '-'}</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="cross-card-empty">Catatan tidak ditemukan di tabel kbli_checks untuk assignment ini.</div>
+          )}
+        </div>
+
+        {/* NEGATIVE NTB CHECKS CARD */}
+        <div className="cross-card">
+          <div className="cross-card-header">
+            <div className="cross-card-title">
+              <FileCheck2 /> Data Tabel NTB Negatif (negative_ntb_checks)
+            </div>
+            {item.hasNtb ? (
+              <span className="badge done">NTB: {item.ntb?.nilaiTambah || 'Tersedia'}</span>
+            ) : (
+              <span className="badge inactive">Tidak Ada Data</span>
+            )}
+          </div>
+          {item.hasNtb && item.ntb ? (
+            <div className="cross-fields-grid">
+              <div className="cross-field">
+                <small>assignment_id</small>
+                <strong>{item.ntb.assignmentId || item.assignmentId}</strong>
+              </div>
+              <div className="cross-field">
+                <small>nama principal</small>
+                <strong>{item.ntb.namaPrincipal || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>kategori</small>
+                <strong>{item.ntb.kategori || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>kbli akhir</small>
+                <strong>{item.ntb.kbliAkhir || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>tahun operasi</small>
+                <strong>{item.ntb.tahunOperasi || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>nilai tambah</small>
+                <strong style={{ color: (item.ntb?.nilaiTambah || '').includes('-') ? '#c43838' : '#19324d' }}>
+                  {item.ntb?.nilaiTambah || '-'}
+                </strong>
+              </div>
+              <div className="cross-field">
+                <small>r27a (omzet)</small>
+                <strong>{item.ntb.r27aOmzet || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>r26c (biaya pembelian)</small>
+                <strong>{item.ntb.r26cBiayaPembelian || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>r26b (biaya produksi)</small>
+                <strong>{item.ntb.r26bBiayaProduksi || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>r26d (biaya operasional)</small>
+                <strong>{item.ntb.r26dBiayaOperasional || '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>catatan</small>
+                <strong>{item.ntb.catatan || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>level 2 code</small>
+                <strong>{item.ntb.level2FullCode || '-'}</strong>
+              </div>
+              <div className="cross-field">
+                <small>level 6 code</small>
+                <strong>{item.ntb.level6FullCode || '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>source file & folder</small>
+                <strong>{item.ntb.sourceFile ? `${item.ntb.sourceFile} (${item.ntb.sourceFolder || '-'})` : '-'}</strong>
+              </div>
+              <div className="cross-field full">
+                <small>link fasih</small>
+                <strong>{item.ntb.linkFasih || '-'}</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="cross-card-empty">Catatan tidak ditemukan di tabel negative_ntb_checks untuk assignment ini.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,query:string,setQuery:(s:string)=>void,status:string,setStatus:(s:any)=>void,columns:string[],rows:string[][]}) {
   const [checks, setChecks] = useState(combinedChecks)
   const [expandedRow, setExpandedRow] = useState<string|null>(null)
-  const [checkData, setCheckData] = useState<any[]>([])
+  const [crossData, setCrossData] = useState<CrossCheckRecord[]>([])
   const [loading, setLoading] = useState(false)
-  const title=tab==='stage3'?'Pembagian Stage 3':tab==='negative'?'Checklist Data NTB Negatif':'Check Data'
+  const title = tab==='stage3' ? 'Pembagian Stage 3' : tab==='negative' ? 'Checklist Data NTB Negatif' : 'Check Data'
+
   useEffect(() => {
     if (tab !== 'kbli') return
     setLoading(true)
-    fetch('/api/check-data').then(response => response.ok ? response.json() : Promise.reject()).then((items: any[]) => {
-      setCheckData(items.map(item => [
-        item.kbliId || '-',
-        item.assignmentId || item.kbliAssignmentId || '-',
-        item.kbliNamaUsaha || item.namaPrincipal || item.kbliNamaPrelist || '-',
-        item.kbliAkhir || item.ntbKbliAkhir || '-',
-        item.kbliStatus || '-',
-        item.ntbKategori || item.kbliKategori || '-',
-        item.ntbCatatan || item.kbliKegUtama || '-',
-        item.ntbNilaiTambah || '-',
-        item.kbliLinkFasih || item.ntbLinkFasih || '-',
-        item.kbliNamaPrelist || '-',
-        item.kbliKategori || '-',
-        item.kbliKegUtama || '-',
-        item.ntbLinkFasih || '-'
-      ]))
-    }).catch(() => setCheckData([])).finally(() => setLoading(false))
+    fetch('/api/check-data')
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then((items: any[]) => {
+        const transformed: CrossCheckRecord[] = items.map((item, idx) => {
+          const assignmentId = item.assignmentId || item.kbliAssignmentId || item.ntbAssignmentId || `TBN-${String(idx + 1).padStart(5, '0')}`
+          const namaUsaha = item.kbliNamaUsaha || item.namaPrincipal || item.kbliNamaPrelist || '-'
+          const kbliAkhir = item.kbliAkhir || item.ntbKbliAkhir || '-'
+          const linkFasih = item.kbliLinkFasih || item.ntbLinkFasih || '-'
+          const hasKbli = Boolean(item.kbliId || item.kbliAssignmentId || item.kbliNamaUsaha)
+          const hasNtb = Boolean(item.ntbId || item.assignmentId || item.namaPrincipal || item.ntbCatatan)
+
+          return {
+            id: assignmentId,
+            assignmentId,
+            namaUsaha,
+            kbliAkhir,
+            linkFasih,
+            hasKbli,
+            kbli: hasKbli ? {
+              id: item.kbliId ?? '-',
+              assignmentId: item.kbliAssignmentId || assignmentId,
+              namaUsaha: item.kbliNamaUsaha || '-',
+              namaDiPrelist: item.kbliNamaPrelist || '-',
+              kbliAkhir: item.kbliAkhir || '-',
+              kategori: item.kbliKategori || '-',
+              kategori2025: item.kbliKategori2025 || '-',
+              kegUtama: item.kbliKegUtama || '-',
+              status: item.kbliStatus || '-',
+              assignmentStatusAlias: item.kbliAssignmentStatusAlias || '-',
+              level3FullCode: item.kbliLevel3FullCode || '-',
+              level3Name: item.kbliLevel3Name || '-',
+              level4FullCode: item.kbliLevel4FullCode || '-',
+              level4Name: item.kbliLevel4Name || '-',
+              level6FullCode: item.kbliLevel6FullCode || '-',
+              level6Name: item.kbliLevel6Name || '-',
+              index1: item.kbliIndex1 || '-',
+              linkFasih: item.kbliLinkFasih || '-',
+            } : null,
+            hasNtb,
+            ntb: hasNtb ? {
+              id: item.ntbId ?? '-',
+              assignmentId: item.assignmentId || item.ntbAssignmentId || assignmentId,
+              namaPrincipal: item.namaPrincipal || item.ntbNamaPrincipal || '-',
+              kategori: item.ntbKategori || '-',
+              kbliAkhir: item.ntbKbliAkhir || '-',
+              tahunOperasi: item.ntbTahunOperasi || '-',
+              catatan: item.ntbCatatan || '-',
+              r27aOmzet: item.ntbOmzet || item.r27aOmzet || '-',
+              r26cBiayaPembelian: item.ntbBiayaPembelian || item.r26cBiayaPembelian || '-',
+              r26bBiayaProduksi: item.ntbBiayaProduksi || item.r26bBiayaProduksi || '-',
+              r26dBiayaOperasional: item.ntbBiayaOperasional || item.r26dBiayaOperasional || '-',
+              nilaiTambah: item.ntbNilaiTambah || '-',
+              level2FullCode: item.ntbLevel2FullCode || '-',
+              level6FullCode: item.ntbLevel6FullCode || '-',
+              sourceFile: item.ntbSourceFile || '-',
+              sourceFolder: item.ntbSourceFolder || '-',
+              linkFasih: item.ntbLinkFasih || item.linkFasih || '-',
+            } : null,
+          }
+        })
+        setCrossData(transformed)
+      })
+      .catch(() => setCrossData([]))
+      .finally(() => setLoading(false))
   }, [tab])
-  const sourceRows = tab === 'kbli' ? checkData : sampleNegative
-  const data = sourceRows.filter(row => `${row[1]} ${row[2]} ${row[3]}`.toLowerCase().includes(query.toLowerCase()))
-  const updateCheck = (id:string, key:keyof Pick<CheckState,'kbli'|'ntb'|'kewajaran'>) => setChecks(current => ({...current, [id]: {...current[id], [key]: !current[id][key], checkedBy: 'Admin BPS', checkedAt: new Date().toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' })}}))
-  const isComplete = (id:string) => Object.values(checks[id]).slice(0,3).every(Boolean)
-  const visible = status==='Semua' ? data : data.filter(row => status==='Selesai' ? isComplete(row[2]) : !isComplete(row[2]))
-  return <><div className="page-heading"><div><p className="eyebrow blue">DATA MANAGEMENT</p><h1>{title}</h1><p className="muted">Satu tampilan pengecekan berdasarkan assignment_id.</p></div><button className="primary"><Plus /> Tambah Data</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari assignment, nama usaha, KBLI..." /></div><select value={status} onChange={e=>setStatus(e.target.value)}><option>Semua</option><option>Belum dicek</option><option>Selesai</option></select><button className="outline"><Upload /> Import CSV</button></div><div className="table-wrap combined-table"><table><thead><tr><th>Detail</th><th>assignment_id</th><th>Nama usaha</th><th>KBLI akhir</th><th>Link Fasih</th><th>Pengecekan 1<br/><small>KBLI</small></th><th>Pengecekan 2<br/><small>NTB negatif</small></th><th>Pengecekan 3<br/><small>Kewajaran</small></th><th>Dicek oleh</th><th>Tanggal cek</th></tr></thead><tbody>{loading ? <tr><td colSpan={9} className="empty-users">Memuat data hasil cross join...</td></tr> : visible.map((row, rowIndex)=>{const id=tab==='kbli'?row[1]:row[2], rowKey=`${id}-${rowIndex}`, check=checks[id] || { kbli: false, ntb: false, kewajaran: false }; return <><tr key={rowKey}><td><button className="detail-toggle" aria-label={`Detail ${id}`} aria-expanded={expandedRow===rowKey} onClick={()=>setExpandedRow(expandedRow===rowKey?null:rowKey)}><ChevronDown className={expandedRow===rowKey?'rotated':''}/></button></td><td><strong>{id}</strong></td><td>{tab==='kbli'?row[2]:row[3]}</td><td>{tab==='kbli'?row[3]:row[5]}</td><td>{(tab==='kbli'?row[8]:row[14]) && (tab==='kbli'?row[8]:row[14]) !== '-' ? <a className="fasih-link" href={tab==='kbli'?row[8]:row[14]} target="_blank" rel="noreferrer" aria-label={`Buka tautan Fasih ${id}`} title="Buka tautan Fasih"><Eye /></a> : '-'}</td>{(['kbli','ntb','kewajaran'] as const).map((key,index)=><td key={key}><label className="check-cell"><input type="checkbox" checked={check[key]} onChange={()=>updateCheck(id,key)}/><span>{check[key]?'Sudah':'-'}</span></label></td>)}<td>{check.checkedBy || '-'}</td><td>{check.checkedAt || '-'}</td></tr>{expandedRow===rowKey&&<tr className="details-row" key={`${rowKey}-details`}><td colSpan={9}><div className="details-grid">{(tab==='kbli'?kbliColumns:negativeColumns).map((column,index)=><div key={column}><small>{column}</small><strong>{(tab==='kbli'?sampleKbli[0]:row)[index] || '-'}</strong></div>)}</div></td></tr>}</>})}</tbody></table></div><div className="table-footer"><span>Menampilkan {visible.length} dari {data.length} assignment</span><div><button className="page-btn">←</button><button className="page-btn selected">1</button><button className="page-btn">→</button></div></div></section></>}
+
+  const updateCheck = (id:string, key:keyof Pick<CheckState,'kbli'|'ntb'|'kewajaran'>) => setChecks(current => ({
+    ...current,
+    [id]: {
+      ...current[id],
+      [key]: !current[id]?.[key],
+      checkedBy: 'Admin BPS',
+      checkedAt: new Date().toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' })
+    }
+  }))
+
+  const isComplete = (id:string) => {
+    const c = checks[id]
+    return c ? (c.kbli && c.ntb && c.kewajaran) : false
+  }
+
+  const filteredCrossData = useMemo(() => {
+    return crossData.filter(item => {
+      const matchQuery = `${item.assignmentId} ${item.namaUsaha} ${item.kbliAkhir} ${item.kbli?.kategori || ''} ${item.ntb?.catatan || ''}`.toLowerCase().includes(query.toLowerCase())
+      if (!matchQuery) return false
+      if (status === 'Semua') return true
+      const complete = isComplete(item.assignmentId)
+      return status === 'Selesai' ? complete : !complete
+    })
+  }, [crossData, query, status, checks])
+
+  const filteredRows = useMemo(() => {
+    return rows.filter(row => {
+      const id = row[2] || row[0]
+      const text = row.join(' ').toLowerCase()
+      if (!text.includes(query.toLowerCase())) return false
+      if (status === 'Semua') return true
+      const complete = isComplete(id)
+      return status === 'Selesai' ? complete : !complete
+    })
+  }, [rows, query, status, checks])
+
+  const downloadAllData = () => {
+    if (tab === 'kbli') {
+      const headers = [
+        'assignment_id',
+        'nama_usaha_kbli',
+        'nama_principal_ntb',
+        'kbli_akhir_kbli',
+        'kbli_akhir_ntb',
+        'kategori_kbli',
+        'kategori_ntb',
+        'status_kbli',
+        'nilai_tambah_ntb',
+        'r27a_omzet',
+        'r26c_biaya_pembelian',
+        'r26b_biaya_produksi',
+        'r26d_biaya_operasional',
+        'catatan_ntb',
+        'level_3_name',
+        'level_6_name',
+        'link_fasih'
+      ]
+      const exportRows = filteredCrossData.map(item => [
+        item.assignmentId,
+        item.kbli?.namaUsaha || '-',
+        item.ntb?.namaPrincipal || '-',
+        item.kbli?.kbliAkhir || '-',
+        item.ntb?.kbliAkhir || '-',
+        item.kbli?.kategori || '-',
+        item.ntb?.kategori || '-',
+        item.kbli?.status || '-',
+        item.ntb?.nilaiTambah || '-',
+        item.ntb?.r27aOmzet || '-',
+        item.ntb?.r26cBiayaPembelian || '-',
+        item.ntb?.r26bBiayaProduksi || '-',
+        item.ntb?.r26dBiayaOperasional || '-',
+        item.ntb?.catatan || '-',
+        item.kbli?.level3Name || '-',
+        item.kbli?.level6Name || '-',
+        item.linkFasih
+      ])
+      exportToCsv('cross_table_kbli_checks_negative_ntb.csv', headers, exportRows)
+    } else {
+      exportToCsv(`${tab}_data.csv`, columns, filteredRows)
+    }
+  }
+
+  const downloadSingleRow = (item: CrossCheckRecord) => {
+    const headers = ['tabel', 'assignment_id', 'nama', 'kbli_akhir', 'kategori', 'keterangan_atau_catatan', 'nilai_tambah', 'omzet', 'biaya_beli', 'biaya_produksi', 'biaya_operasional', 'link_fasih']
+    const exportRows = [
+      [
+        'kbli_checks',
+        item.kbli?.assignmentId || item.assignmentId,
+        item.kbli?.namaUsaha || '-',
+        item.kbli?.kbliAkhir || '-',
+        item.kbli?.kategori || '-',
+        item.kbli?.kegUtama || '-',
+        '-',
+        '-',
+        '-',
+        '-',
+        '-',
+        item.kbli?.linkFasih || item.linkFasih
+      ],
+      [
+        'negative_ntb_checks',
+        item.ntb?.assignmentId || item.assignmentId,
+        item.ntb?.namaPrincipal || '-',
+        item.ntb?.kbliAkhir || '-',
+        item.ntb?.kategori || '-',
+        item.ntb?.catatan || '-',
+        item.ntb?.nilaiTambah || '-',
+        item.ntb?.r27aOmzet || '-',
+        item.ntb?.r26cBiayaPembelian || '-',
+        item.ntb?.r26bBiayaProduksi || '-',
+        item.ntb?.r26dBiayaOperasional || '-',
+        item.ntb?.linkFasih || item.linkFasih
+      ]
+    ]
+    exportToCsv(`cross_data_${item.assignmentId}.csv`, headers, exportRows)
+  }
+
+  const activeCount = tab === 'kbli' ? filteredCrossData.length : filteredRows.length
+  const totalCount = tab === 'kbli' ? crossData.length : rows.length
+
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow blue">DATA MANAGEMENT</p>
+          <h1>{title}</h1>
+          <p className="muted">
+            {tab === 'kbli'
+              ? 'Pengecekan cross table hasil penggabungan kbli_checks dan negative_ntb_checks berdasarkan assignment_id.'
+              : 'Satu tampilan pengecekan berdasarkan assignment_id.'}
+          </p>
+        </div>
+        <button className="primary"><Plus /> Tambah Data</button>
+      </div>
+
+      <section className="panel table-panel">
+        <div className="table-toolbar">
+          <div className="search-box">
+            <Search />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Cari assignment, nama usaha, KBLI, catatan..."
+            />
+          </div>
+          <select value={status} onChange={e => setStatus(e.target.value)}>
+            <option>Semua</option>
+            <option>Belum dicek</option>
+            <option>Selesai</option>
+          </select>
+          <button className="outline" onClick={downloadAllData} title="Unduh data tabel dalam format CSV">
+            <Download /> Unduh Data ({activeCount})
+          </button>
+          <button className="outline"><Upload /> Import CSV</button>
+        </div>
+
+        <div className="table-wrap combined-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Detail</th>
+                <th>assignment_id</th>
+                <th>Nama usaha</th>
+                <th>KBLI akhir</th>
+                <th>Link Fasih</th>
+                <th>Pengecekan 1<br/><small>KBLI</small></th>
+                <th>Pengecekan 2<br/><small>NTB negatif</small></th>
+                <th>Pengecekan 3<br/><small>Kewajaran</small></th>
+                <th>Dicek oleh</th>
+                <th>Tanggal cek</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="empty-users">Memuat data hasil cross join kbli_checks & negative_ntb_checks...</td>
+                </tr>
+              ) : tab === 'kbli' ? (
+                filteredCrossData.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="empty-users">Data tidak ditemukan.</td>
+                  </tr>
+                ) : (
+                  filteredCrossData.map((item, rowIndex) => {
+                    const id = item.assignmentId
+                    const rowKey = `${id}-${rowIndex}`
+                    const check = checks[id] || { kbli: false, ntb: false, kewajaran: false }
+                    const isExpanded = expandedRow === rowKey
+
+                    return (
+                      <Fragment key={rowKey}>
+                        <tr>
+                          <td>
+                            <button
+                              className="detail-toggle"
+                              aria-label={`Detail cross table ${id}`}
+                              aria-expanded={isExpanded}
+                              onClick={() => setExpandedRow(isExpanded ? null : rowKey)}
+                            >
+                              <ChevronDown className={isExpanded ? 'rotated' : ''} />
+                            </button>
+                          </td>
+                          <td><strong>{id}</strong></td>
+                          <td>{item.namaUsaha}</td>
+                          <td>{item.kbliAkhir}</td>
+                          <td>
+                            {item.linkFasih && item.linkFasih !== '-' ? (
+                              <a
+                                className="fasih-link"
+                                href={item.linkFasih}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={`Buka tautan Fasih ${id}`}
+                                title="Buka tautan Fasih"
+                              >
+                                <Eye />
+                              </a>
+                            ) : '-'}
+                          </td>
+                          {(['kbli', 'ntb', 'kewajaran'] as const).map(key => (
+                            <td key={key}>
+                              <label className="check-cell">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(check[key])}
+                                  onChange={() => updateCheck(id, key)}
+                                />
+                                <span>{check[key] ? 'Sudah' : '-'}</span>
+                              </label>
+                            </td>
+                          ))}
+                          <td>{check.checkedBy || '-'}</td>
+                          <td>{check.checkedAt || '-'}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="details-row" key={`${rowKey}-details`}>
+                            <td colSpan={10}>
+                              <CrossTableDetail
+                                item={item}
+                                onDownload={() => downloadSingleRow(item)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })
+                )
+              ) : (
+                filteredRows.map((row, rowIndex) => {
+                  const id = row[2] || row[0]
+                  const rowKey = `${id}-${rowIndex}`
+                  const check = checks[id] || { kbli: false, ntb: false, kewajaran: false }
+                  const isExpanded = expandedRow === rowKey
+
+                  return (
+                    <Fragment key={rowKey}>
+                      <tr>
+                        <td>
+                          <button
+                            className="detail-toggle"
+                            aria-label={`Detail ${id}`}
+                            aria-expanded={isExpanded}
+                            onClick={() => setExpandedRow(isExpanded ? null : rowKey)}
+                          >
+                            <ChevronDown className={isExpanded ? 'rotated' : ''} />
+                          </button>
+                        </td>
+                        <td><strong>{id}</strong></td>
+                        <td>{row[3] || row[1]}</td>
+                        <td>{row[5] || row[3]}</td>
+                        <td>
+                          {row[13] && row[13] !== '-' ? (
+                            <a
+                              className="fasih-link"
+                              href={row[13]}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Buka tautan Fasih ${id}`}
+                              title="Buka tautan Fasih"
+                            >
+                              <Eye />
+                            </a>
+                          ) : '-'}
+                        </td>
+                        {(['kbli', 'ntb', 'kewajaran'] as const).map(key => (
+                          <td key={key}>
+                            <label className="check-cell">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(check[key])}
+                                onChange={() => updateCheck(id, key)}
+                              />
+                              <span>{check[key] ? 'Sudah' : '-'}</span>
+                            </label>
+                          </td>
+                        ))}
+                        <td>{check.checkedBy || '-'}</td>
+                        <td>{check.checkedAt || '-'}</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="details-row" key={`${rowKey}-details`}>
+                          <td colSpan={10}>
+                            <div className="details-grid">
+                              {columns.map((column, colIdx) => (
+                                <div key={column}>
+                                  <small>{column}</small>
+                                  <strong>{row[colIdx] || '-'}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="table-footer">
+          <span>Menampilkan {activeCount} dari {totalCount} assignment</span>
+          <div>
+            <button className="page-btn">←</button>
+            <button className="page-btn selected">1</button>
+            <button className="page-btn">→</button>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
 
 function UsersPage(){
   type UserObj = { id: string; initials: string; name: string; email: string; role: string; status: string; bidang: string }
