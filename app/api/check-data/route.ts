@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { db, pool } from '@/lib/db'
 import { kbliChecks, negativeNtbChecks } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
@@ -199,6 +199,70 @@ const fallbackCrossTable = [
 ]
 
 export async function GET() {
+  // Method 1: Query database using pool with fallback raw query for maximum column resilience
+  try {
+    if (process.env.DATABASE_URL) {
+      const rawJoinResult = await pool.query(`
+        SELECT 
+          COALESCE(k.assignment_id, n.assignment_id) AS "assignmentId",
+          COALESCE(k.nama_usaha, n.nama_principal, k.nama_di_prelist) AS "namaUsaha",
+          COALESCE(k.kbli_akhir, n.kbli_akhir) AS "kbliAkhir",
+          COALESCE(k.link_fasih, n.link_fasih) AS "linkFasih",
+          
+          -- KBLI fields
+          k.id AS "kbliId",
+          k.assignment_id AS "kbliAssignmentId",
+          k.nama_usaha AS "kbliNamaUsaha",
+          k.nama_di_prelist AS "kbliNamaPrelist",
+          k.kategori AS "kbliKategori",
+          k.kategori_2025 AS "kbliKategori2025",
+          k.kbli_akhir AS "kbliAkhirKbli",
+          k.keg_utama AS "kbliKegUtama",
+          k.index1 AS "kbliIndex1",
+          k.status AS "kbliStatus",
+          k.assignment_status_alias AS "kbliAssignmentStatusAlias",
+          k.level_3_full_code AS "kbliLevel3FullCode",
+          k.level_3_name AS "kbliLevel3Name",
+          k.level_4_full_code AS "kbliLevel4FullCode",
+          k.level_4_name AS "kbliLevel4Name",
+          k.level_6_full_code AS "kbliLevel6FullCode",
+          k.level_6_name AS "kbliLevel6Name",
+          k.link_fasih AS "kbliLinkFasih",
+
+          -- NTB fields
+          n.id AS "ntbId",
+          n.assignment_id AS "ntbAssignmentId",
+          n.nama_principal AS "namaPrincipal",
+          n.kategori AS "ntbKategori",
+          n.kbli_akhir AS "ntbKbliAkhir",
+          n.tahun_operasi AS "ntbTahunOperasi",
+          n.catatan AS "ntbCatatan",
+          n.r27a_omzet AS "ntbOmzet",
+          n.r26c_biaya_pembelian AS "ntbBiayaPembelian",
+          n.r26b_biaya_produksi AS "ntbBiayaProduksi",
+          n.r26d_biaya_operasional AS "ntbBiayaOperasional",
+          n.nilai_tambah AS "ntbNilaiTambah",
+          n.level_2_full_code AS "ntbLevel2FullCode",
+          n.level_6_full_code AS "ntbLevel6FullCode",
+          n.source_file AS "ntbSourceFile",
+          n.source_folder AS "ntbSourceFolder",
+          n.link_fasih AS "ntbLinkFasih"
+        FROM kbli_checks k
+        FULL OUTER JOIN negative_ntb_checks n 
+          ON TRIM(LOWER(k.assignment_id)) = TRIM(LOWER(n.assignment_id))
+        ORDER BY COALESCE(k.assignment_id, n.assignment_id) ASC
+        LIMIT 1000
+      `)
+
+      if (rawJoinResult.rows && rawJoinResult.rows.length > 0) {
+        return NextResponse.json(rawJoinResult.rows)
+      }
+    }
+  } catch (errRaw) {
+    console.error('Raw join query error, attempting Drizzle join:', errRaw)
+  }
+
+  // Method 2: Try Drizzle ORM select
   try {
     const rows = await db
       .select({
@@ -247,8 +311,91 @@ export async function GET() {
       return NextResponse.json(rows)
     }
   } catch (error) {
-    console.error('Error querying check-data cross-table:', error)
+    console.error('Error querying check-data cross-table with Drizzle:', error)
   }
 
+  // Method 3: Query both tables separately and join in JS to avoid SQL join syntax issues
+  try {
+    if (process.env.DATABASE_URL) {
+      const [kbliRes, ntbRes] = await Promise.all([
+        pool.query(`SELECT * FROM kbli_checks LIMIT 1000`).catch(() => ({ rows: [] })),
+        pool.query(`SELECT * FROM negative_ntb_checks LIMIT 1000`).catch(() => ({ rows: [] }))
+      ])
+
+      if (kbliRes.rows.length > 0 || ntbRes.rows.length > 0) {
+        const mergedMap = new Map<string, any>()
+
+        for (const k of kbliRes.rows) {
+          const id = (k.assignment_id || `KBLI-${k.id}`).trim()
+          mergedMap.set(id.toLowerCase(), {
+            assignmentId: id,
+            namaUsaha: k.nama_usaha || k.nama_di_prelist,
+            kbliAkhir: k.kbli_akhir,
+            linkFasih: k.link_fasih,
+            
+            kbliId: k.id,
+            kbliAssignmentId: k.assignment_id,
+            kbliNamaUsaha: k.nama_usaha,
+            kbliNamaPrelist: k.nama_di_prelist,
+            kbliKategori: k.kategori,
+            kbliKategori2025: k.kategori_2025,
+            kbliAkhirKbli: k.kbli_akhir,
+            kbliKegUtama: k.keg_utama,
+            kbliIndex1: k.index1,
+            kbliStatus: k.status,
+            kbliAssignmentStatusAlias: k.assignment_status_alias,
+            kbliLevel3FullCode: k.level_3_full_code,
+            kbliLevel3Name: k.level_3_name,
+            kbliLevel4FullCode: k.level_4_full_code,
+            kbliLevel4Name: k.level_4_name,
+            kbliLevel6FullCode: k.level_6_full_code,
+            kbliLevel6Name: k.level_6_name,
+            kbliLinkFasih: k.link_fasih,
+          })
+        }
+
+        for (const n of ntbRes.rows) {
+          const id = (n.assignment_id || `NTB-${n.id}`).trim()
+          const key = id.toLowerCase()
+          const existing = mergedMap.get(key) || { assignmentId: id }
+
+          mergedMap.set(key, {
+            ...existing,
+            assignmentId: existing.assignmentId || id,
+            namaUsaha: existing.namaUsaha || n.nama_principal,
+            kbliAkhir: existing.kbliAkhir || n.kbli_akhir,
+            linkFasih: existing.linkFasih || n.link_fasih,
+            
+            ntbId: n.id,
+            ntbAssignmentId: n.assignment_id,
+            namaPrincipal: n.nama_principal,
+            ntbKategori: n.kategori,
+            ntbKbliAkhir: n.kbli_akhir,
+            ntbTahunOperasi: n.tahun_operasi,
+            ntbCatatan: n.catatan,
+            ntbNilaiTambah: n.nilai_tambah,
+            ntbOmzet: n.r27a_omzet,
+            ntbBiayaPembelian: n.r26c_biaya_pembelian,
+            ntbBiayaProduksi: n.r26b_biaya_produksi,
+            ntbBiayaOperasional: n.r26d_biaya_operasional,
+            ntbLevel2FullCode: n.level_2_full_code,
+            ntbLevel6FullCode: n.level_6_full_code,
+            ntbSourceFile: n.source_file,
+            ntbSourceFolder: n.source_folder,
+            ntbLinkFasih: n.link_fasih,
+          })
+        }
+
+        const rows = Array.from(mergedMap.values())
+        if (rows.length > 0) {
+          return NextResponse.json(rows)
+        }
+      }
+    }
+  } catch (errSep) {
+    console.error('Separate table fetch error:', errSep)
+  }
+
+  // Fallback data only if database is offline or both tables are empty
   return NextResponse.json(fallbackCrossTable)
 }

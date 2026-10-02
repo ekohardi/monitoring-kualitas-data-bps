@@ -15,10 +15,6 @@ const sampleNegative = [
   ['52','5260101002','TBN-00125','Bengkel Maju Jaya','Jasa','45201','2023','Perlu konfirmasi biaya','12000000','4500000','1800000','2100000','3600000','Lihat','ntb_2025.csv','Tuban/01'],
   ['52','5260101003','TBN-00126','Toko Berkah','Perdagangan','47112','2024','Data lengkap','8600000','2100000','900000','1100000','4400000','Lihat','ntb_2025.csv','Tuban/02'],
 ]
-const sampleKbli = [
-  ['G','Perdagangan Besar & Eceran','47','Perdagangan Eceran','47111','Perdagangan eceran di toko','Aktif','Warung Sumber Rejeki','Warung Sumber Rejeki','Perdagangan','Perdagangan','47111','Jual sembako','Negatif','Lihat'],
-  ['C','Industri Pengolahan','10','Industri makanan','10710','Industri produk roti','Aktif','Roti Bu Tini','Roti Bu Tini','Industri','Industri','10710','Produksi roti','Positif','Lihat'],
-]
 
 function Login({ onLogin }: { onLogin: () => void }) {
   const [identifier, setIdentifier] = useState('admin')
@@ -42,7 +38,7 @@ function App() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'Semua'|'Belum dicek'|'Selesai'>('Semua')
-  const rows = useMemo(()=>tab === 'kbli' ? sampleKbli : sampleNegative, [tab])
+  const rows = useMemo(()=>tab === 'kbli' ? [] : sampleNegative, [tab])
   if (!loggedIn) return <Login onLogin={()=>setLoggedIn(true)} />
   const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'stage3',label:'Pembagian Stage 3',icon:BarChart3},{id:'kbli',label:'Check Data',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
   const tableCols = tab === 'kbli' ? kbliColumns : negativeColumns
@@ -357,11 +353,11 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
       .then((items: any[]) => {
         const transformed: CrossCheckRecord[] = items.map((item, idx) => {
           const assignmentId = item.assignmentId || item.kbliAssignmentId || item.ntbAssignmentId || `TBN-${String(idx + 1).padStart(5, '0')}`
-          const namaUsaha = item.kbliNamaUsaha || item.namaPrincipal || item.kbliNamaPrelist || '-'
-          const kbliAkhir = item.kbliAkhir || item.ntbKbliAkhir || '-'
-          const linkFasih = item.kbliLinkFasih || item.ntbLinkFasih || '-'
-          const hasKbli = Boolean(item.kbliId || item.kbliAssignmentId || item.kbliNamaUsaha)
-          const hasNtb = Boolean(item.ntbId || item.assignmentId || item.namaPrincipal || item.ntbCatatan)
+          const namaUsaha = item.namaUsaha || item.kbliNamaUsaha || item.namaPrincipal || item.kbliNamaPrelist || '-'
+          const kbliAkhir = item.kbliAkhir || item.kbliAkhirKbli || item.ntbKbliAkhir || '-'
+          const linkFasih = item.linkFasih || item.kbliLinkFasih || item.ntbLinkFasih || '-'
+          const hasKbli = Boolean(item.kbliId || item.kbliAssignmentId || item.kbliNamaUsaha || item.kbliAkhir || item.kbliAkhirKbli)
+          const hasNtb = Boolean(item.ntbId || item.ntbAssignmentId || item.namaPrincipal || item.ntbCatatan || item.ntbNilaiTambah || item.ntbOmzet)
 
           return {
             id: assignmentId,
@@ -373,9 +369,9 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
             kbli: hasKbli ? {
               id: item.kbliId ?? '-',
               assignmentId: item.kbliAssignmentId || assignmentId,
-              namaUsaha: item.kbliNamaUsaha || '-',
+              namaUsaha: item.kbliNamaUsaha || item.namaUsaha || '-',
               namaDiPrelist: item.kbliNamaPrelist || '-',
-              kbliAkhir: item.kbliAkhir || '-',
+              kbliAkhir: item.kbliAkhirKbli || item.kbliAkhir || '-',
               kategori: item.kbliKategori || '-',
               kategori2025: item.kbliKategori2025 || '-',
               kegUtama: item.kbliKegUtama || '-',
@@ -388,21 +384,21 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
               level6FullCode: item.kbliLevel6FullCode || '-',
               level6Name: item.kbliLevel6Name || '-',
               index1: item.kbliIndex1 || '-',
-              linkFasih: item.kbliLinkFasih || '-',
+              linkFasih: item.kbliLinkFasih || item.linkFasih || '-',
             } : null,
             hasNtb,
             ntb: hasNtb ? {
               id: item.ntbId ?? '-',
-              assignmentId: item.assignmentId || item.ntbAssignmentId || assignmentId,
-              namaPrincipal: item.namaPrincipal || item.ntbNamaPrincipal || '-',
+              assignmentId: item.ntbAssignmentId || item.assignmentId || assignmentId,
+              namaPrincipal: item.namaPrincipal || '-',
               kategori: item.ntbKategori || '-',
-              kbliAkhir: item.ntbKbliAkhir || '-',
+              kbliAkhir: item.ntbKbliAkhir || item.kbliAkhir || '-',
               tahunOperasi: item.ntbTahunOperasi || '-',
               catatan: item.ntbCatatan || '-',
-              r27aOmzet: item.ntbOmzet || item.r27aOmzet || '-',
-              r26cBiayaPembelian: item.ntbBiayaPembelian || item.r26cBiayaPembelian || '-',
-              r26bBiayaProduksi: item.ntbBiayaProduksi || item.r26bBiayaProduksi || '-',
-              r26dBiayaOperasional: item.ntbBiayaOperasional || item.r26dBiayaOperasional || '-',
+              r27aOmzet: item.ntbOmzet || '-',
+              r26cBiayaPembelian: item.ntbBiayaPembelian || '-',
+              r26bBiayaProduksi: item.ntbBiayaProduksi || '-',
+              r26dBiayaOperasional: item.ntbBiayaOperasional || '-',
               nilaiTambah: item.ntbNilaiTambah || '-',
               level2FullCode: item.ntbLevel2FullCode || '-',
               level6FullCode: item.ntbLevel6FullCode || '-',
