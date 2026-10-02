@@ -1,4 +1,5 @@
 import { pool } from '@/lib/db'
+import { ensureTables } from '@/lib/db/ensure-tables'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -8,7 +9,7 @@ function formatRelativeTime(date: Date | string | null | undefined): string {
   if (!date) return 'Baru saja'
   const d = typeof date === 'string' ? new Date(date) : date
   if (isNaN(d.getTime())) return 'Baru saja'
-  
+
   const diffMs = Date.now() - d.getTime()
   if (diffMs < 0) return 'Baru saja'
   const diffMinutes = Math.floor(diffMs / (1000 * 60))
@@ -41,18 +42,10 @@ export async function GET() {
 
   try {
     if (process.env.DATABASE_URL) {
-      // Ensure activity_logs table exists
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS activity_logs (
-          id SERIAL PRIMARY KEY,
-          user_initials TEXT,
-          user_name TEXT,
-          action_text TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `).catch(() => null)
+      // 1. Ensure database tables and columns exist
+      await ensureTables()
 
-      // 1. Total distinct assignments across kbli_checks & negative_ntb_checks
+      // 2. Real distinct assignments across kbli_checks & negative_ntb_checks
       const totalRes = await pool.query(`
         SELECT COUNT(DISTINCT aid) AS total_count
         FROM (
@@ -64,7 +57,19 @@ export async function GET() {
 
       let totalAssignment = parseInt(totalRes.rows[0]?.total_count || '0', 10)
 
-      // 2. Count by status in kbli_checks
+      // Fallback count check if union returned 0
+      if (totalAssignment === 0) {
+        const altCount = await pool.query(`
+          SELECT 
+            (SELECT COUNT(*) FROM kbli_checks) AS kbli_count,
+            (SELECT COUNT(*) FROM negative_ntb_checks) AS ntb_count
+        `).catch(() => ({ rows: [{ kbli_count: 0, ntb_count: 0 }] }))
+        const kbliC = parseInt(altCount.rows[0]?.kbli_count || '0', 10)
+        const ntbC = parseInt(altCount.rows[0]?.ntb_count || '0', 10)
+        totalAssignment = Math.max(kbliC, ntbC)
+      }
+
+      // 3. Count dynamic statuses from kbli_checks
       const statusRes = await pool.query(`
         SELECT 
           COUNT(*) FILTER (WHERE status ILIKE '%selesai%') AS selesai_count,
@@ -74,11 +79,11 @@ export async function GET() {
         FROM kbli_checks
       `).catch(() => ({ rows: [{ selesai_count: 0, belum_count: 0, konfirmasi_count: 0, total_kbli: 0 }] }))
 
-      let sudahDicek = parseInt(statusRes.rows[0]?.selesai_count || '0', 10)
-      let belumDicek = parseInt(statusRes.rows[0]?.belum_count || '0', 10)
-      let konfirmasi = parseInt(statusRes.rows[0]?.konfirmasi_count || '0', 10)
+      const sudahDicek = parseInt(statusRes.rows[0]?.selesai_count || '0', 10)
+      const belumDicek = parseInt(statusRes.rows[0]?.belum_count || '0', 10)
+      const konfirmasi = parseInt(statusRes.rows[0]?.konfirmasi_count || '0', 10)
 
-      // 3. Count negative NTB checks
+      // 4. Count anomalies & negative NTB from negative_ntb_checks
       const ntbRes = await pool.query(`
         SELECT 
           COUNT(*) FILTER (WHERE nilai_tambah LIKE '-%' OR nilai_tambah = '0') AS negatif_count,
@@ -86,30 +91,12 @@ export async function GET() {
         FROM negative_ntb_checks
       `).catch(() => ({ rows: [{ negatif_count: 0, total_ntb: 0 }] }))
 
-      let ntbNegatif = parseInt(ntbRes.rows[0]?.negatif_count || '0', 10)
-      let perluTindakLanjut = konfirmasi + ntbNegatif
-
-      if (totalAssignment === 0) {
-        const kbliCount = parseInt(statusRes.rows[0]?.total_kbli || '0', 10)
-        const ntbCount = parseInt(ntbRes.rows[0]?.total_ntb || '0', 10)
-        totalAssignment = Math.max(kbliCount, ntbCount)
-      }
-
-      // If database has no assignments at all yet, provide baseline fallback
-      if (totalAssignment === 0) {
-        totalAssignment = 6
-        sudahDicek = 4
-        belumDicek = 1
-        perluTindakLanjut = 2
-      } else {
-        if (sudahDicek === 0 && belumDicek === 0) {
-          belumDicek = totalAssignment
-        }
-      }
+      const ntbNegatif = parseInt(ntbRes.rows[0]?.negatif_count || '0', 10)
+      const perluTindakLanjut = konfirmasi + ntbNegatif
 
       const percentComplete = totalAssignment > 0 ? Math.round((sudahDicek / totalAssignment) * 100) : 0
 
-      // 4. Distribution of assignments per officer from "user" table
+      // 5. Query REAL registered users from "user" table for Stage 3 distribution
       const usersRes = await pool.query(`
         SELECT id, name, role, "createdAt"
         FROM "user"
@@ -117,13 +104,13 @@ export async function GET() {
         LIMIT 6
       `).catch(() => ({ rows: [] }))
 
-      let stageOfficers: any[] = []
+      let stageOfficers: Array<{ name: string; count: string; percent: string; percentNum: number }> = []
       if (usersRes.rows && usersRes.rows.length > 0) {
         const count = usersRes.rows.length
         stageOfficers = usersRes.rows.map((u: any, idx: number) => {
           const quota = Math.max(1, Math.round(totalAssignment / count))
-          const officerDone = Math.min(quota, Math.round((sudahDicek * (count - idx)) / (count * 1.5)) || 1)
-          const pct = Math.min(100, Math.round((officerDone / quota) * 100))
+          const officerDone = Math.min(quota, Math.round((sudahDicek * (count - idx)) / (count * 1.5)) || (sudahDicek > 0 ? 1 : 0))
+          const pct = quota > 0 ? Math.min(100, Math.round((officerDone / quota) * 100)) : 0
           return {
             name: u.name || 'Petugas BPS',
             count: `${quota} data`,
@@ -131,22 +118,16 @@ export async function GET() {
             percentNum: pct
           }
         })
-      } else {
-        stageOfficers = [
-          { name: 'Admin BPS Tuban', count: `${Math.max(1, Math.round(totalAssignment * 0.4))} data`, percent: '85%', percentNum: 85 },
-          { name: 'Petugas Lapangan Tuban 01', count: `${Math.max(1, Math.round(totalAssignment * 0.3))} data`, percent: '70%', percentNum: 70 },
-          { name: 'Petugas Lapangan Tuban 02', count: `${Math.max(1, Math.round(totalAssignment * 0.3))} data`, percent: '55%', percentNum: 55 }
-        ]
       }
 
-      // 5. Build dynamic "Aktivitas Terbaru" from relevant tables:
-      // - activity_logs (direct user update/action events)
-      // - kbli_checks (recent business KBLI inspections)
-      // - negative_ntb_checks (recent NTB checks)
-      // - "user" (registered system officers)
-      const activities: any[] = []
+      // 6. Build dynamic "Aktivitas Terbaru" ONLY from real database records:
+      // a) activity_logs table (actual user actions)
+      // b) kbli_checks table (actual rows in database)
+      // c) negative_ntb_checks table (actual rows in database)
+      // d) user table (actual registered users)
+      const activities: Array<{ initials: string; name: string; action: string; time: string }> = []
 
-      // 5a. Direct activity logs
+      // 6a. Direct activity logs
       const logRes = await pool.query(`
         SELECT user_initials, user_name, action_text, created_at
         FROM activity_logs
@@ -165,7 +146,7 @@ export async function GET() {
         }
       }
 
-      // 5b. Supplement from kbli_checks table
+      // 6b. Supplement with real entries from kbli_checks
       const recentKbli = await pool.query(`
         SELECT assignment_id, nama_usaha, status, kbli_akhir
         FROM kbli_checks
@@ -177,18 +158,18 @@ export async function GET() {
         const uName = k.nama_usaha || k.assignment_id || 'Usaha'
         const isDone = k.status && k.status.toLowerCase().includes('selesai')
         const actionDesc = isDone
-          ? `Menyelesaikan validasi KBLI ${k.kbli_akhir || ''} (${k.assignment_id})`
-          : `Memeriksa assignment ${k.assignment_id} - status: ${k.status || 'Belum Dicek'}`
+          ? `Validasi KBLI ${k.kbli_akhir || ''} selesai diperiksa (${k.assignment_id})`
+          : `Pemeriksaan KBLI berstatus ${k.status || 'Belum Dicek'} (${k.assignment_id})`
 
         activities.push({
           initials: getInitials(uName),
           name: uName,
           action: actionDesc,
-          time: 'Hari ini'
+          time: 'Terdaftar di database'
         })
       }
 
-      // 5c. Supplement from negative_ntb_checks table
+      // 6c. Supplement with real entries from negative_ntb_checks
       const recentNtb = await pool.query(`
         SELECT assignment_id, nama_principal, nilai_tambah, catatan
         FROM negative_ntb_checks
@@ -200,24 +181,24 @@ export async function GET() {
         const pName = n.nama_principal || n.assignment_id || 'Principal'
         const isNegative = n.nilai_tambah && String(n.nilai_tambah).trim().startsWith('-')
         const actionDesc = isNegative
-          ? `Mendeteksi nilai tambah negatif ${n.nilai_tambah} pada ${n.assignment_id}`
-          : `Memverifikasi catatan nilai tambah (${n.nilai_tambah || '0'})`
+          ? `Anomali NTB Negatif: nilai tambah ${n.nilai_tambah} (${n.assignment_id})`
+          : `Verifikasi nilai tambah: ${n.nilai_tambah || '0'} (${n.assignment_id})`
 
         activities.push({
           initials: getInitials(pName),
           name: pName,
           action: actionDesc,
-          time: 'Hari ini'
+          time: 'Terdaftar di database'
         })
       }
 
-      // 5d. Supplement from "user" table
+      // 6d. Supplement with real registered users from "user"
       if (usersRes.rows && usersRes.rows.length > 0) {
         for (const u of usersRes.rows.slice(0, 2)) {
           activities.push({
             initials: getInitials(u.name),
             name: u.name,
-            action: `Aktif bertugas dalam verifikasi Stage 3 (${u.role || 'Petugas Lapangan'})`,
+            action: `Akun petugas (${u.role || 'Petugas Lapangan'}) aktif di sistem`,
             time: formatRelativeTime(u.createdAt)
           })
         }
@@ -237,25 +218,17 @@ export async function GET() {
       }, { headers })
     }
   } catch (err) {
-    console.error('Error fetching dashboard aggregate:', err)
+    console.error('Error in GET /api/dashboard:', err)
   }
 
-  // Fallback data when database is unavailable
+  // Pure dynamic empty response if database connection is not available (NO DUMMY DATA)
   return NextResponse.json({
-    totalAssignment: 6,
-    sudahDicek: 4,
-    belumDicek: 2,
-    perluTindakLanjut: 2,
-    percentComplete: 67,
-    stageOfficers: [
-      { name: 'Admin BPS', count: '3 data', percent: '100%', percentNum: 100 },
-      { name: 'Dwi Santoso', count: '2 data', percent: '50%', percentNum: 50 },
-      { name: 'Lina Putri', count: '1 data', percent: '0%', percentNum: 0 }
-    ],
-    activities: [
-      { initials: 'AR', name: 'Admin Rina', action: 'Memperbarui status pengecekan cross table KBLI & NTB', time: '10 menit lalu' },
-      { initials: 'DS', name: 'Dwi Santoso', action: 'Melakukan validasi KBLI Bengkel Maju Jaya (TBN-00125)', time: '35 menit lalu' },
-      { initials: 'LP', name: 'Lina Putri', action: 'Memeriksa nilai tambah pada negative_ntb_checks', time: '1 jam lalu' }
-    ]
+    totalAssignment: 0,
+    sudahDicek: 0,
+    belumDicek: 0,
+    perluTindakLanjut: 0,
+    percentComplete: 0,
+    stageOfficers: [],
+    activities: []
   }, { headers })
 }

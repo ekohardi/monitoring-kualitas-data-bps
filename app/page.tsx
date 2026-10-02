@@ -40,9 +40,9 @@ function App() {
   const [status, setStatus] = useState<'Semua'|'Belum dicek'|'Selesai'>('Semua')
   const rows = useMemo(()=>tab === 'kbli' ? [] : sampleNegative, [tab])
   if (!loggedIn) return <Login onLogin={()=>setLoggedIn(true)} />
-  const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'stage3',label:'Pembagian Stage 3',icon:BarChart3},{id:'kbli',label:'Check Data',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
+  const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'kbli',label:'Check Data',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
   const tableCols = tab === 'kbli' ? kbliColumns : negativeColumns
-  return <div className="app-shell"><aside className={mobileOpen?'sidebar open':'sidebar'}><div className="side-brand"><img src="/icon.svg" alt="Logo BPS" style={{ width: 34, height: 34, flexShrink: 0 }} /><div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div><button className="close-nav" onClick={()=>setMobileOpen(false)}><X /></button></div><div className="side-section">MENU UTAMA</div><nav>{nav.map(item=>{const Icon=item.icon; return <button key={item.id} className={tab===item.id?'nav-item active':'nav-item'} onClick={()=>{setTab(item.id);setMobileOpen(false)}}><Icon />{item.label}{item.id==='negative'&&<b>12</b>}</button>})}</nav><div className="sidebar-bottom"><button className="nav-item"><Settings /> Pengaturan</button><button className="nav-item logout" onClick={()=>setLoggedIn(false)}><LogOut /> Keluar</button></div></aside><div className="main-area"><header><button className="menu-btn" onClick={()=>setMobileOpen(true)}><Menu /></button><div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div><div className="header-actions"><button className="icon-button"><Search /></button><div className="profile"><div className="avatar">AR</div><div><strong>Admin BPS</strong><span>Administrator</span></div><ChevronDown /></div></div></header><main className="content">{tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus}/>}</main></div></div>
+  return <div className="app-shell">{mobileOpen && <div className="sidebar-backdrop" onClick={()=>setMobileOpen(false)} aria-label="Tutup menu navigasi" />}<aside className={mobileOpen?'sidebar open':'sidebar'}><div className="side-brand"><img src="/icon.svg" alt="Logo BPS" style={{ width: 34, height: 34, flexShrink: 0 }} /><div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div><button className="close-nav" onClick={()=>setMobileOpen(false)} aria-label="Tutup navigasi"><X /></button></div><div className="side-section">MENU UTAMA</div><nav>{nav.map(item=>{const Icon=item.icon; return <button key={item.id} className={tab===item.id?'nav-item active':'nav-item'} onClick={()=>{setTab(item.id);setMobileOpen(false)}}><Icon />{item.label}{item.id==='negative'&&<b>12</b>}</button>})}</nav><div className="sidebar-bottom"><button className="nav-item"><Settings /> Pengaturan</button><button className="nav-item logout" onClick={()=>setLoggedIn(false)}><LogOut /> Keluar</button></div></aside><div className="main-area"><header><button className="menu-btn" onClick={()=>setMobileOpen(true)} title="Buka menu navigasi" aria-label="Buka menu navigasi"><Menu /></button><div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div><div className="header-actions"><button className="icon-button"><Search /></button><div className="profile"><div className="avatar">AR</div><div><strong>Admin BPS</strong><span>Administrator</span></div><ChevronDown /></div></div></header><main className="content">{tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus}/>}</main></div></div>
 }
 
 function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
@@ -136,70 +136,40 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
         />
       </div>
 
-      <div className="grid-two">
-        <section className="panel progress-panel">
-          <div className="panel-head">
+      <section className="panel progress-panel">
+        <div className="panel-head">
+          <div>
+            <h3>Progress Validasi</h3>
+            <p className="muted">Status pemeriksaan seluruh data</p>
+          </div>
+          <span className="period">2025 <ChevronDown /></span>
+        </div>
+        <div className="big-progress">
+          <div
+            className="progress-ring"
+            style={{
+              background: `conic-gradient(var(--blue) ${data.percentComplete}%, #e8eff5 0)`
+            }}
+          >
+            <strong>{data.percentComplete}%</strong>
+            <span>selesai</span>
+          </div>
+          <div className="legend">
             <div>
-              <h3>Progress Validasi</h3>
-              <p className="muted">Status pemeriksaan seluruh data</p>
+              <i className="dot blue-dot" />
+              Sudah dicek <b>{data.sudahDicek.toLocaleString('id-ID')}</b>
             </div>
-            <span className="period">2025 <ChevronDown /></span>
-          </div>
-          <div className="big-progress">
-            <div
-              className="progress-ring"
-              style={{
-                background: `conic-gradient(var(--blue) ${data.percentComplete}%, #e8eff5 0)`
-              }}
-            >
-              <strong>{data.percentComplete}%</strong>
-              <span>selesai</span>
-            </div>
-            <div className="legend">
-              <div>
-                <i className="dot blue-dot" />
-                Sudah dicek <b>{data.sudahDicek.toLocaleString('id-ID')}</b>
-              </div>
-              <div>
-                <i className="dot orange-dot" />
-                Belum dicek <b>{data.belumDicek.toLocaleString('id-ID')}</b>
-              </div>
-              <div>
-                <i className="dot gray-dot" />
-                Perlu tindak lanjut <b>{data.perluTindakLanjut.toLocaleString('id-ID')}</b>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel stage-panel">
-          <div className="panel-head">
             <div>
-              <h3>Pembagian Stage 3</h3>
-              <p className="muted">Distribusi assignment per petugas</p>
+              <i className="dot orange-dot" />
+              Belum dicek <b>{data.belumDicek.toLocaleString('id-ID')}</b>
             </div>
-            <button className="text-button" onClick={() => setTab('stage3')}>Lihat semua →</button>
+            <div>
+              <i className="dot gray-dot" />
+              Perlu tindak lanjut <b>{data.perluTindakLanjut.toLocaleString('id-ID')}</b>
+            </div>
           </div>
-          {data.stageOfficers && data.stageOfficers.length > 0 ? (
-            data.stageOfficers.map((x, idx) => (
-              <div className="person-progress" key={idx}>
-                <div>
-                  <span>{x.name}</span>
-                  <b>{x.count}</b>
-                </div>
-                <div className="bar">
-                  <i style={{ width: x.percent }} />
-                </div>
-                <small>{x.percent}</small>
-              </div>
-            ))
-          ) : (
-            <p className="muted" style={{ padding: '20px 0', fontSize: '12px' }}>
-              {loading ? 'Mengambil data petugas...' : 'Tidak ada data petugas.'}
-            </p>
-          )}
-        </section>
-      </div>
+        </div>
+      </section>
 
       <section className="panel activity">
         <div className="panel-head">
@@ -222,7 +192,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
             ))
           ) : (
             <p className="muted" style={{ padding: '12px 0', fontSize: '12px' }}>
-              {loading ? 'Mengambil aktivitas terbaru...' : 'Belum ada aktivitas tercatat.'}
+              {loading ? 'Memuat aktivitas dari database...' : 'Belum ada aktivitas tercatat pada tabel database.'}
             </p>
           )}
         </div>
@@ -606,7 +576,13 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
   const [showAddModal, setShowAddModal] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [selectedKategori, setSelectedKategori] = useState('Semua Kategori')
+  const [pageSize, setPageSize] = useState<number>(10)
+  const [currentPage, setCurrentPage] = useState<number>(1)
   const title = tab==='stage3' ? 'Pembagian Stage 3' : tab==='negative' ? 'Checklist Data NTB Negatif' : 'Check Data'
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [query, status, selectedKategori, pageSize, tab])
 
   const availableCategories = useMemo(() => {
     const set = new Set<string>()
@@ -924,6 +900,18 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
 
   const activeCount = tab === 'kbli' ? filteredCrossData.length : filteredRows.length
   const totalCount = tab === 'kbli' ? crossData.length : rows.length
+  const totalPages = Math.max(1, Math.ceil(activeCount / pageSize))
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages)
+  const startIndex = (safeCurrentPage - 1) * pageSize
+  const endIndex = Math.min(startIndex + pageSize, activeCount)
+
+  const paginatedCrossData = useMemo(() => {
+    return filteredCrossData.slice(startIndex, endIndex)
+  }, [filteredCrossData, startIndex, endIndex])
+
+  const paginatedRows = useMemo(() => {
+    return filteredRows.slice(startIndex, endIndex)
+  }, [filteredRows, startIndex, endIndex])
 
   return (
     <>
@@ -1019,12 +1007,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
                   <td colSpan={10} className="empty-users">Memuat data live dari database PostgreSQL...</td>
                 </tr>
               ) : tab === 'kbli' ? (
-                filteredCrossData.length === 0 ? (
+                paginatedCrossData.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="empty-users">Data tidak ditemukan di database.</td>
                   </tr>
                 ) : (
-                  filteredCrossData.map((item, rowIndex) => {
+                  paginatedCrossData.map((item, rowIndex) => {
                     const id = item.assignmentId
                     const rowKey = `${id}-${rowIndex}`
                     const check = checks[id] || { kbli: false, ntb: false, kewajaran: false }
@@ -1091,7 +1079,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
                   })
                 )
               ) : (
-                filteredRows.map((row, rowIndex) => {
+                paginatedRows.map((row, rowIndex) => {
                   const id = row[2] || row[0]
                   const rowKey = `${id}-${rowIndex}`
                   const check = checks[id] || { kbli: false, ntb: false, kewajaran: false }
@@ -1165,11 +1153,81 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
         </div>
 
         <div className="table-footer">
-          <span>Menampilkan {activeCount} dari {totalCount} assignment</span>
-          <div>
-            <button className="page-btn">←</button>
-            <button className="page-btn selected">1</button>
-            <button className="page-btn">→</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <span>
+              Menampilkan {activeCount === 0 ? 0 : startIndex + 1} - {endIndex} dari {activeCount} assignment
+              {activeCount !== totalCount && ` (total ${totalCount})`}
+            </span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <label htmlFor="pageSizeSelect" style={{ fontSize: '11px', color: '#667d93' }}>Tampilkan:</label>
+              <select
+                id="pageSizeSelect"
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value))
+                  setCurrentPage(1)
+                }}
+                style={{
+                  border: '1px solid #d3dfe9',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  background: 'white',
+                  color: 'var(--ink)',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+              <span style={{ fontSize: '11px', color: '#667d93' }}>per halaman</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              className="page-btn"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={safeCurrentPage <= 1}
+              title="Halaman Sebelumnya"
+              style={{ opacity: safeCurrentPage <= 1 ? 0.4 : 1, cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer', width: 'auto', padding: '0 8px' }}
+            >
+              ← Prev
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1)
+              .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                if (idx > 0 && typeof arr[idx - 1] === 'number' && (p as number) - (arr[idx - 1] as number) > 1) {
+                  acc.push('...')
+                }
+                acc.push(p)
+                return acc
+              }, [])
+              .map((p, idx) => {
+                if (p === '...') {
+                  return <span key={`ellipsis-${idx}`} style={{ padding: '0 4px', color: '#889eb2', fontSize: '11px' }}>...</span>
+                }
+                return (
+                  <button
+                    key={`page-${p}`}
+                    className={`page-btn ${safeCurrentPage === p ? 'selected' : ''}`}
+                    onClick={() => setCurrentPage(Number(p))}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {p}
+                  </button>
+                )
+              })
+            }
+            <button
+              className="page-btn"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              title="Halaman Berikutnya"
+              style={{ opacity: safeCurrentPage >= totalPages ? 0.4 : 1, cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer', width: 'auto', padding: '0 8px' }}
+            >
+              Next →
+            </button>
           </div>
         </div>
       </section>
