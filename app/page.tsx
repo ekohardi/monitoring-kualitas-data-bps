@@ -60,14 +60,28 @@ const combinedChecks: Record<string, CheckState> = {
 function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,query:string,setQuery:(s:string)=>void,status:string,setStatus:(s:any)=>void,columns:string[],rows:string[][]}) {
   const [checks, setChecks] = useState(combinedChecks)
   const [expandedRow, setExpandedRow] = useState<string|null>(null)
-  const [checkData, setCheckData] = useState<string[][]>([])
+  const [checkData, setCheckData] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const title=tab==='stage3'?'Pembagian Stage 3':tab==='negative'?'Checklist Data NTB Negatif':'Check Data'
   useEffect(() => {
     if (tab !== 'kbli') return
     setLoading(true)
     fetch('/api/check-data').then(response => response.ok ? response.json() : Promise.reject()).then((items: any[]) => {
-      setCheckData(items.map(item => [item.kbliId, item.assignmentId, item.kbliNamaUsaha || item.namaPrincipal || '-', item.kbliAkhir || item.ntbKbliAkhir || '-', item.kbliStatus || '-', item.ntbKategori || '-', item.ntbCatatan || '-', item.ntbNilaiTambah || '-', item.kbliLinkFasih || item.ntbLinkFasih || '-']))
+      setCheckData(items.map(item => [
+        item.kbliId || '-',
+        item.assignmentId || item.kbliAssignmentId || '-',
+        item.kbliNamaUsaha || item.namaPrincipal || item.kbliNamaPrelist || '-',
+        item.kbliAkhir || item.ntbKbliAkhir || '-',
+        item.kbliStatus || '-',
+        item.ntbKategori || item.kbliKategori || '-',
+        item.ntbCatatan || item.kbliKegUtama || '-',
+        item.ntbNilaiTambah || '-',
+        item.kbliLinkFasih || item.ntbLinkFasih || '-',
+        item.kbliNamaPrelist || '-',
+        item.kbliKategori || '-',
+        item.kbliKegUtama || '-',
+        item.ntbLinkFasih || '-'
+      ]))
     }).catch(() => setCheckData([])).finally(() => setLoading(false))
   }, [tab])
   const sourceRows = tab === 'kbli' ? checkData : sampleNegative
