@@ -11,6 +11,7 @@ export async function GET() {
       ntbKategori: negativeNtbChecks.kategori,
       ntbCatatan: negativeNtbChecks.catatan,
       ntbNilaiTambah: negativeNtbChecks.nilaiTambah,
+      ntbLinkFasih: negativeNtbChecks.linkFasih,
       kbliId: kbliChecks.id,
       kbliNamaUsaha: kbliChecks.namaUsaha,
       kbliAkhir: kbliChecks.kbliAkhir,
