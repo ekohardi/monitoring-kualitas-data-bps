@@ -287,6 +287,16 @@ export async function ensureTables() {
         source_folder TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS assignment_checks (
+        assignment_id TEXT PRIMARY KEY,
+        check_kbli BOOLEAN DEFAULT FALSE,
+        check_ntb BOOLEAN DEFAULT FALSE,
+        check_kewajaran BOOLEAN DEFAULT FALSE,
+        checked_by TEXT,
+        checked_at TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS assignment_id TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS link_fasih TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS nama_usaha TEXT;
@@ -298,6 +308,17 @@ export async function ensureTables() {
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS status TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS keterangan TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS perbaikan_kbli TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS check_kbli BOOLEAN DEFAULT FALSE;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS check_ntb BOOLEAN DEFAULT FALSE;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS check_kewajaran BOOLEAN DEFAULT FALSE;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS checked_by TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS checked_at TEXT;
+
+      ALTER TABLE assignment_checks ADD COLUMN IF NOT EXISTS check_kbli BOOLEAN DEFAULT FALSE;
+      ALTER TABLE assignment_checks ADD COLUMN IF NOT EXISTS check_ntb BOOLEAN DEFAULT FALSE;
+      ALTER TABLE assignment_checks ADD COLUMN IF NOT EXISTS check_kewajaran BOOLEAN DEFAULT FALSE;
+      ALTER TABLE assignment_checks ADD COLUMN IF NOT EXISTS checked_by TEXT;
+      ALTER TABLE assignment_checks ADD COLUMN IF NOT EXISTS checked_at TEXT;
 
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS assignment_id TEXT;
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS link_fasih TEXT;
@@ -319,6 +340,33 @@ export async function ensureTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `)
+
+    // Seed initial checks into assignment_checks if empty
+    const checkCountRes = await pool.query(`SELECT COUNT(*) AS c FROM assignment_checks`).catch(() => ({ rows: [{ c: 0 }] }))
+    const checkCount = parseInt(checkCountRes.rows[0]?.c || '0', 10)
+    if (checkCount === 0) {
+      const initialChecks = [
+        { id: 'TBN-00124', k: true, n: false, w: false, by: 'Admin Rina', at: '30 Sep 2026, 09:42' },
+        { id: 'TBN-00125', k: true, n: true, w: false, by: 'Dwi Santoso', at: '30 Sep 2026, 10:15' },
+        { id: 'TBN-00126', k: false, n: false, w: false, by: '', at: '' },
+        { id: 'TBN-00127', k: true, n: true, w: true, by: 'Eko Hardi', at: '01 Okt 2026, 14:20' },
+        { id: 'TBN-00128', k: true, n: false, w: false, by: 'Dwi Santoso', at: '02 Okt 2026, 11:05' },
+        { id: 'TBN-00129', k: true, n: true, w: true, by: 'Admin Rina', at: '03 Okt 2026, 16:30' },
+      ]
+      for (const ic of initialChecks) {
+        await pool.query(`
+          INSERT INTO assignment_checks (assignment_id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (assignment_id) DO NOTHING
+        `, [ic.id, ic.k, ic.n, ic.w, ic.by, ic.at]).catch(() => null)
+
+        await pool.query(`
+          UPDATE kbli_checks
+          SET check_kbli = $2, check_ntb = $3, check_kewajaran = $4, checked_by = $5, checked_at = $6
+          WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
+        `, [ic.id, ic.k, ic.n, ic.w, ic.by, ic.at]).catch(() => null)
+      }
+    }
 
     // Check if tables are completely empty; if so, populate initial seed so database has live data
     const countRes = await pool.query(`

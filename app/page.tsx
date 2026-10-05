@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
-type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'users'
+type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'kbli_check' | 'users'
 
 const negativeColumns = ['level_2_full_code','level_6_full_code','assignment_id','nama_principal','kategori','kbli_akhir','tahun_operasi','catatan','r27a_omzet','r26c_biaya_pembelian','r26b_biaya_produksi','r26d_biaya_operasional','nilai_tambah','link_fasih','source_file','source_folder']
 const kbliColumns = ['level_3_full_code','level_3_name','level_4_full_code','level_4_name','level_6_full_code','level_6_name','assignment_status_alias','nama_di_prelist','nama_usaha','kategori','kategori_2025','kbli_akhir','keg_utama','index1','link_fasih']
@@ -199,8 +199,13 @@ function App() {
     )
   }
 
-  const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'kbli',label:'Check Data',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
-  const tableCols = tab === 'kbli' ? kbliColumns : negativeColumns
+  const nav = [
+    { id: 'dashboard', label: 'Ringkasan', icon: LayoutDashboard },
+    { id: 'kbli', label: 'Check Data', icon: Database },
+    { id: 'kbli_check', label: 'KBLI Check', icon: FileCheck2 },
+    { id: 'users', label: 'Manajemen Pengguna', icon: Users }
+  ] as const
+  const tableCols = (tab === 'kbli' || tab === 'kbli_check') ? kbliColumns : negativeColumns
 
   return (
     <div className="app-shell">
@@ -385,6 +390,9 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
           >
             <RotateCw className={loading ? 'animate-spin' : ''} style={{ width: 14, height: 14 }} />
             <span>{loading ? 'Memuat...' : 'Refresh'}</span>
+          </button>
+          <button className="outline" onClick={() => setTab('kbli_check')}>
+            <FileCheck2 style={{ width: 15, height: 15 }} /> KBLI Check
           </button>
           <button className="primary" onClick={() => setTab('kbli')}>
             <Database style={{ width: 15, height: 15 }} /> Check Data
@@ -706,7 +714,15 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const [selectedKategori, setSelectedKategori] = useState('Semua Kategori')
   const [pageSize, setPageSize] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
-  const title = tab==='stage3' ? 'Pembagian Stage 3' : tab==='negative' ? 'Checklist Data NTB Negatif' : 'Check Data'
+
+  const isLiveTab = tab === 'kbli' || tab === 'kbli_check'
+  const title = tab === 'stage3'
+    ? 'Pembagian Stage 3'
+    : tab === 'negative'
+    ? 'Checklist Data NTB Negatif'
+    : tab === 'kbli_check'
+    ? 'KBLI Check'
+    : 'Check Data'
 
   useEffect(() => {
     setCurrentPage(1)
@@ -725,9 +741,10 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     return Array.from(set).sort()
   }, [crossData])
 
-  const fetchCheckData = () => {
-    setLoading(true)
-    fetch(`/api/check-data?_t=${Date.now()}`, {
+  const fetchData = (showLoading = false) => {
+    if (showLoading) setLoading(true)
+    const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
+    fetch(`${endpoint}?_t=${Date.now()}`, {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -737,37 +754,108 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       .then(response => response.ok ? response.json() : Promise.reject())
       .then((items: CrossCheckRecord[]) => {
         setCrossData(items)
+        const checksFromDb: Record<string, CheckState> = {}
+        items.forEach(it => {
+          if (it.check) {
+            checksFromDb[it.assignmentId] = it.check
+          }
+        })
+        setChecks(prev => ({ ...prev, ...checksFromDb }))
       })
       .catch(err => {
-        console.error('Failed to load check data:', err)
-        setCrossData([])
+        if (showLoading) {
+          console.error('Failed to load data:', err)
+          setCrossData([])
+        }
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (showLoading) setLoading(false)
+      })
   }
 
   useEffect(() => {
-    if (tab === 'kbli') {
-      fetchCheckData()
+    if (!isLiveTab) return
+
+    fetchData(true)
+
+    // Real-time polling every 4 seconds for multi-user live status
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchData(false)
+      }
+    }, 4000)
+
+    const onFocus = () => {
+      fetchData(false)
+    }
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
     }
   }, [tab])
 
-  const updateCheck = (id:string, key:keyof Pick<CheckState,'kbli'|'ntb'|'kewajaran'>) => {
-    setChecks(current => {
-      const checkerName = currentUser?.username || currentUser?.name || 'Admin BPS'
-      const next = {
-        ...current,
-        [id]: {
-          ...current[id],
-          [key]: !current[id]?.[key],
+  const updateCheck = async (id: string, key: keyof Pick<CheckState, 'kbli' | 'ntb' | 'kewajaran'>) => {
+    const checkerName = currentUser?.username || currentUser?.name || 'Admin BPS'
+    const curVal = Boolean(checks[id]?.[key])
+    const newVal = !curVal
+    const nowStr = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+
+    // Optimistic UI update
+    setChecks(current => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        [key]: newVal,
+        checkedBy: checkerName,
+        checkedAt: nowStr
+      }
+    }))
+
+    setCrossData(prev => prev.map(item => {
+      if (item.assignmentId !== id) return item
+      const itemKbli = key === 'kbli' ? newVal : Boolean(item.check?.kbli ?? checks[id]?.kbli)
+      const itemNtb = key === 'ntb' ? newVal : Boolean(item.check?.ntb ?? checks[id]?.ntb)
+      const itemWajar = key === 'kewajaran' ? newVal : Boolean(item.check?.kewajaran ?? checks[id]?.kewajaran)
+      const newStatus = (itemKbli && itemNtb && itemWajar) ? 'Selesai Dicek' : (itemKbli || itemNtb || itemWajar) ? 'Sedang Dicek' : 'Belum Dicek'
+      return {
+        ...item,
+        status: newStatus,
+        check: {
+          kbli: itemKbli,
+          ntb: itemNtb,
+          kewajaran: itemWajar,
           checkedBy: checkerName,
-          checkedAt: new Date().toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' })
+          checkedAt: nowStr
         }
       }
-      if (typeof window !== 'undefined') {
-        try { localStorage.setItem('monitoring_checks', JSON.stringify(next)) } catch {}
+    }))
+
+    // Persist to database in real-time
+    const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle_check',
+          assignmentId: id,
+          key,
+          value: newVal,
+          checkerName
+        })
+      })
+      if (res.ok) {
+        const json = await res.json()
+        if (json.check) {
+          setChecks(current => ({ ...current, [id]: json.check }))
+          setCrossData(prev => prev.map(item => item.assignmentId === id ? { ...item, status: json.status, check: json.check } : item))
+        }
       }
-      return next
-    })
+    } catch (err) {
+      console.error('Failed to save check to database:', err)
+    }
   }
 
   const isComplete = (id:string) => {
@@ -808,7 +896,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   }, [rows, query, status, checks])
 
   const downloadAllData = () => {
-    if (tab === 'kbli') {
+    if (isLiveTab) {
       const headers = [
         'assignment_id',
         'nama_di_prelist',
@@ -867,7 +955,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
           item.linkFasih
         ]
       })
-      exportToCsv('check_data_kualitas.csv', headers, exportRows)
+      exportToCsv(`${tab === 'kbli_check' ? 'kbli_checks' : 'check_data'}_kualitas.csv`, headers, exportRows)
     } else {
       exportToCsv(`${tab}_data.csv`, columns, filteredRows)
     }
@@ -936,9 +1024,11 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     if (!editItem) return
     setFormLoading(true)
     const formData = new FormData(e.currentTarget)
+    const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
     const payload = {
       action: 'update',
       assignmentId: editItem.assignmentId,
+      checkerName: currentUser?.username || currentUser?.name || 'Petugas BPS',
       kbliData: {
         namaUsaha: formData.get('namaUsaha') as string,
         namaDiPrelist: formData.get('namaDiPrelist') as string,
@@ -965,14 +1055,14 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     }
 
     try {
-      const res = await fetch('/api/check-data', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
       if (!res.ok) throw new Error()
       setEditItem(null)
-      fetchCheckData()
+      fetchData(false)
     } catch {
       alert('Gagal menyimpan perubahan ke database.')
     } finally {
@@ -991,13 +1081,16 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       return
     }
 
+    const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
     const payload = {
       action: 'create',
       assignmentId: aid,
+      checkerName: currentUser?.username || currentUser?.name || 'Admin BPS',
       kbliData: {
         namaUsaha: formData.get('namaUsaha') as string,
         kbliAkhir: formData.get('kbliAkhir') as string,
         kategori: formData.get('kategori') as string,
+        kategori2025: (formData.get('kategori2025') as string) || 'Perdagangan Eceran',
         kegUtama: formData.get('kegUtama') as string,
         status: 'Belum Dicek',
         linkFasih: formData.get('linkFasih') as string,
@@ -1014,14 +1107,14 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     }
 
     try {
-      const res = await fetch('/api/check-data', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
       if (!res.ok) throw new Error()
       setShowAddModal(false)
-      fetchCheckData()
+      fetchData(false)
     } catch {
       alert('Gagal menambahkan assignment ke database.')
     } finally {
@@ -1052,9 +1145,10 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         return obj
       })
 
+      const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
       try {
         setLoading(true)
-        const res = await fetch('/api/check-data', {
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'import', rows })
@@ -1062,7 +1156,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         const result = await res.json()
         if (res.ok) {
           alert(result.message || 'Import data berhasil!')
-          fetchCheckData()
+          fetchData(false)
         } else {
           alert(result.error || 'Gagal mengimpor data ke database.')
         }
@@ -1076,8 +1170,8 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     reader.readAsText(file)
   }
 
-  const activeCount = tab === 'kbli' ? filteredCrossData.length : filteredRows.length
-  const totalCount = tab === 'kbli' ? crossData.length : rows.length
+  const activeCount = isLiveTab ? filteredCrossData.length : filteredRows.length
+  const totalCount = isLiveTab ? crossData.length : rows.length
   const totalPages = Math.max(1, Math.ceil(activeCount / pageSize))
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages)
   const startIndex = (safeCurrentPage - 1) * pageSize
@@ -1098,7 +1192,9 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
           <p className="eyebrow blue">DATA MANAGEMENT</p>
           <h1>{title}</h1>
           <p className="muted">
-            {tab === 'kbli'
+            {tab === 'kbli_check'
+              ? 'Pengecekan data KBLI BPS Kabupaten Tuban langsung dari tabel kbli_checks (sinkronisasi database real-time).'
+              : tab === 'kbli'
               ? 'Pengecekan cross table hasil penggabungan kbli_checks dan negative_ntb_checks dari database PostgreSQL.'
               : 'Satu tampilan pengecekan berdasarkan assignment_id.'}
           </p>
@@ -1123,7 +1219,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             <option>Belum dicek</option>
             <option>Selesai</option>
           </select>
-          {tab === 'kbli' && (
+          {isLiveTab && (
             <select
               value={selectedKategori}
               onChange={e => setSelectedKategori(e.target.value)}
@@ -1135,15 +1231,21 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
               ))}
             </select>
           )}
-          {tab === 'kbli' && (
-            <button className="outline" onClick={fetchCheckData} title="Segarkan data dari database">
+          {isLiveTab && (
+            <div className="live-sync-indicator" title="Sinkronisasi otomatis dengan database PostgreSQL setiap 4 detik">
+              <span className="live-dot" />
+              <span>Real-time Sync</span>
+            </div>
+          )}
+          {isLiveTab && (
+            <button className="outline" onClick={() => fetchData(true)} title="Segarkan data dari database">
               <RotateCw className={loading ? 'rotated' : ''} /> Segarkan
             </button>
           )}
           <button className="outline" onClick={downloadAllData} title="Unduh data tabel dalam format CSV">
             <Download /> Unduh Data ({activeCount})
           </button>
-          {tab === 'kbli' && (
+          {isLiveTab && (
             <>
               <input
                 id="csv-file-input"
@@ -1177,24 +1279,26 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 <th>Pengecekan 3<br/><small>Kewajaran</small></th>
                 <th>Dicek oleh</th>
                 <th>Tanggal cek</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && crossData.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-users">Memuat data live dari database PostgreSQL...</td>
+                  <td colSpan={11} className="empty-users">Memuat data live dari database PostgreSQL...</td>
                 </tr>
-              ) : tab === 'kbli' ? (
+              ) : isLiveTab ? (
                 paginatedCrossData.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-users">Data tidak ditemukan di database.</td>
+                    <td colSpan={11} className="empty-users">Data tidak ditemukan di database.</td>
                   </tr>
                 ) : (
                   paginatedCrossData.map((item, rowIndex) => {
                     const id = item.assignmentId
                     const rowKey = `${id}-${rowIndex}`
-                    const check = checks[id] || { kbli: false, ntb: false, kewajaran: false }
+                    const check = checks[id] || item.check || { kbli: false, ntb: false, kewajaran: false }
                     const isExpanded = expandedRow === rowKey
+                    const rowStatus = item.status || (isComplete(id) ? 'Selesai Dicek' : 'Belum Dicek')
 
                     return (
                       <Fragment key={rowKey}>
@@ -1202,7 +1306,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                           <td>
                             <button
                               className="detail-toggle"
-                              aria-label={`Detail cross table ${id}`}
+                              aria-label={`Detail ${id}`}
                               aria-expanded={isExpanded}
                               onClick={() => setExpandedRow(isExpanded ? null : rowKey)}
                             >
@@ -1240,10 +1344,19 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                           ))}
                           <td>{check.checkedBy || '-'}</td>
                           <td>{check.checkedAt || '-'}</td>
+                          <td>
+                            <span className={`status-badge ${
+                              rowStatus.toLowerCase().includes('selesai') ? 'selesai' :
+                              rowStatus.toLowerCase().includes('sedang') ? 'sedang' :
+                              rowStatus.toLowerCase().includes('perlu') ? 'konfirmasi' : 'belum'
+                            }`}>
+                              {rowStatus}
+                            </span>
+                          </td>
                         </tr>
                         {isExpanded && (
                           <tr className="details-row" key={`${rowKey}-details`}>
-                            <td colSpan={10}>
+                            <td colSpan={11}>
                               <CrossTableDetail
                                 item={item}
                                 onEdit={() => setEditItem(item)}

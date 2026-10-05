@@ -21,8 +21,15 @@ function getVal(row: Record<string, any> | null | undefined, candidates: string[
 }
 
 // Builds the merged cross-table list from raw rows
-function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
+function buildCrossRecords(kbliRows: any[], ntbRows: any[], checksRows: any[] = []) {
   const mergedMap = new Map<string, { kbliRow?: any; ntbRow?: any; id: string }>()
+
+  const checksMap = new Map<string, any>()
+  for (const c of checksRows) {
+    if (c.assignment_id) {
+      checksMap.set(c.assignment_id.trim().toLowerCase(), c)
+    }
+  }
 
   // Process kbli_checks rows
   for (const k of kbliRows) {
@@ -100,6 +107,22 @@ function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
     const kategori2025 = getVal(kbliRow, ['kategori_2025', 'kategori2025']) || '-'
     const kegUtama = getVal(kbliRow, ['keg_utama', 'kegUtama', 'kegiatan_utama']) || '-'
 
+    const checkDb = checksMap.get(id.toLowerCase().trim())
+    const isKbli = Boolean(checkDb ? checkDb.check_kbli : (kbliRow?.check_kbli))
+    const isNtb = Boolean(checkDb ? checkDb.check_ntb : (kbliRow?.check_ntb))
+    const isKewajaran = Boolean(checkDb ? checkDb.check_kewajaran : (kbliRow?.check_kewajaran))
+    const checkedBy = (checkDb?.checked_by || kbliRow?.checked_by || '').trim()
+    const checkedAt = (checkDb?.checked_at || kbliRow?.checked_at || '').trim()
+
+    let rowStatus = getVal(kbliRow, ['status']) || 'Belum Dicek'
+    if (isKbli && isNtb && isKewajaran) {
+      rowStatus = 'Selesai Dicek'
+    } else if (isKbli || isNtb || isKewajaran) {
+      if (!rowStatus || rowStatus.toLowerCase().includes('belum')) {
+        rowStatus = 'Sedang Dicek'
+      }
+    }
+
     result.push({
       id,
       assignmentId: id,
@@ -112,8 +135,16 @@ function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
       linkFasih,
       hasKbli,
       hasNtb,
+      status: rowStatus,
       keterangan,
       perbaikanKbli,
+      check: {
+        kbli: isKbli,
+        ntb: isNtb,
+        kewajaran: isKewajaran,
+        checkedBy,
+        checkedAt,
+      },
       kbli: hasKbli ? {
         id: kbliRow.id ?? '-',
         assignmentId: getVal(kbliRow, ['assignment_id', 'assignmentId']) || id,
@@ -123,7 +154,7 @@ function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
         kategori,
         kategori2025,
         kegUtama,
-        status: getVal(kbliRow, ['status']) || 'Belum Dicek',
+        status: rowStatus,
         assignmentStatusAlias: getVal(kbliRow, ['assignment_status_alias', 'assignmentStatusAlias']) || 'Aktif',
         level3FullCode: getVal(kbliRow, ['level_3_full_code', 'level3FullCode']) || '-',
         level3Name: getVal(kbliRow, ['level_3_name', 'level3Name']) || '-',
@@ -178,8 +209,8 @@ export async function GET() {
     if (process.env.DATABASE_URL) {
       await ensureTables()
 
-      // Fetch all rows from both tables directly with SELECT *
-      const [kbliRes, ntbRes] = await Promise.all([
+      // Fetch all rows from both tables and assignment_checks
+      const [kbliRes, ntbRes, checksRes] = await Promise.all([
         pool.query(`SELECT * FROM kbli_checks ORDER BY id ASC LIMIT 2000`).catch(err => {
           console.error('Failed to select from kbli_checks:', err)
           return { rows: [] }
@@ -187,11 +218,15 @@ export async function GET() {
         pool.query(`SELECT * FROM negative_ntb_checks ORDER BY id ASC LIMIT 2000`).catch(err => {
           console.error('Failed to select from negative_ntb_checks:', err)
           return { rows: [] }
+        }),
+        pool.query(`SELECT * FROM assignment_checks`).catch(err => {
+          console.error('Failed to select from assignment_checks:', err)
+          return { rows: [] }
         })
       ])
 
       if (kbliRes.rows.length > 0 || ntbRes.rows.length > 0) {
-        const records = buildCrossRecords(kbliRes.rows, ntbRes.rows)
+        const records = buildCrossRecords(kbliRes.rows, ntbRes.rows, checksRes.rows)
         return NextResponse.json(records, { headers })
       }
     }
@@ -213,7 +248,73 @@ export async function POST(request: Request) {
 
     await ensureTables()
     const body = await request.json()
-    const { action, assignmentId, kbliData, ntbData, rows } = body
+    const { action, assignmentId, key, value, checkerName, kbliData, ntbData, rows } = body
+
+    // Real-time checklist toggle
+    if (action === 'toggle_check' && assignmentId && key) {
+      const aid = assignmentId.trim()
+      const nowStr = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+      const byUser = (checkerName || 'Petugas BPS').trim()
+
+      const cur = await pool.query(
+        `SELECT check_kbli, check_ntb, check_kewajaran, checked_by, checked_at FROM assignment_checks WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))`,
+        [aid]
+      ).catch(() => ({ rows: [] }))
+
+      let kbliVal = cur.rows[0]?.check_kbli || false
+      let ntbVal = cur.rows[0]?.check_ntb || false
+      let kewajaranVal = cur.rows[0]?.check_kewajaran || false
+
+      if (key === 'kbli') kbliVal = Boolean(value)
+      if (key === 'ntb') ntbVal = Boolean(value)
+      if (key === 'kewajaran') kewajaranVal = Boolean(value)
+
+      let newStatus = 'Belum Dicek'
+      if (kbliVal && ntbVal && kewajaranVal) {
+        newStatus = 'Selesai Dicek'
+      } else if (kbliVal || ntbVal || kewajaranVal) {
+        newStatus = 'Sedang Dicek'
+      }
+
+      await pool.query(`
+        INSERT INTO assignment_checks (assignment_id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (assignment_id) DO UPDATE SET
+          check_kbli = EXCLUDED.check_kbli,
+          check_ntb = EXCLUDED.check_ntb,
+          check_kewajaran = EXCLUDED.check_kewajaran,
+          checked_by = EXCLUDED.checked_by,
+          checked_at = EXCLUDED.checked_at,
+          updated_at = NOW()
+      `, [aid, kbliVal, ntbVal, kewajaranVal, byUser, nowStr])
+
+      await pool.query(`
+        UPDATE kbli_checks
+        SET check_kbli = $2, check_ntb = $3, check_kewajaran = $4, checked_by = $5, checked_at = $6, status = $7
+        WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
+      `, [aid, kbliVal, ntbVal, kewajaranVal, byUser, nowStr, newStatus])
+
+      const initials = (byUser.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).slice(0, 2).map((s: string) => s[0]).join('') || 'BP').toUpperCase()
+      const checkLabel = key === 'kbli' ? 'KBLI' : key === 'ntb' ? 'NTB Negatif' : 'Kewajaran'
+      const statusAction = value ? 'menandai selesai' : 'membatalkan tanda'
+      await pool.query(`
+        INSERT INTO activity_logs (user_initials, user_name, action_text)
+        VALUES ($1, $2, $3)
+      `, [initials, byUser, `${statusAction} pengecekan ${checkLabel} untuk ${aid}`]).catch(() => null)
+
+      return NextResponse.json({
+        ok: true,
+        assignmentId: aid,
+        status: newStatus,
+        check: {
+          kbli: kbliVal,
+          ntb: ntbVal,
+          kewajaran: kewajaranVal,
+          checkedBy: byUser,
+          checkedAt: nowStr
+        }
+      })
+    }
 
     // Bulk CSV import
     if (action === 'import' && Array.isArray(rows)) {
