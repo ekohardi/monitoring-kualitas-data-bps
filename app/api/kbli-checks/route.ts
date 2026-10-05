@@ -347,42 +347,272 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, message: `Assignment ${assignmentId} berhasil ditambahkan ke tabel kbli_checks.` })
     }
 
-    // 4. Bulk CSV import
+    // 4. Robust Bulk CSV import with field normalization & upsert
     if (action === 'import' && Array.isArray(rows)) {
       let importedCount = 0
-      for (const r of rows) {
-        const aid = r.assignment_id || r.assignmentId
-        if (!aid) continue
+      let createdCount = 0
+      let updatedCount = 0
 
-        await pool.query(`
-          INSERT INTO kbli_checks (
-            assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
-            keg_utama, status, link_fasih, keterangan, perbaikan_kbli
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          ON CONFLICT DO NOTHING
-        `, [
+      // Helper function to extract fields from any header format
+      const extractRowFields = (row: Record<string, any>) => {
+        const map = new Map<string, string>()
+        for (const [k, v] of Object.entries(row)) {
+          if (v !== undefined && v !== null) {
+            const normKey = String(k).toLowerCase().replace(/[^a-z0-9]/g, '')
+            map.set(normKey, String(v).trim())
+          }
+        }
+
+        const get = (keys: string[]): string => {
+          for (const k of keys) {
+            const norm = k.toLowerCase().replace(/[^a-z0-9]/g, '')
+            const val = map.get(norm)
+            if (val !== undefined && val !== '') return val
+          }
+          return ''
+        }
+
+        const aid = get(['assignment_id', 'assignmentid', 'id_assignment', 'id', 'kode_assignment', 'assignment'])
+        const namaUsaha = get(['nama_usaha', 'namausaha', 'nama', 'nama_perusahaan', 'perusahaan', 'principal'])
+        const namaDiPrelist = get(['nama_di_prelist', 'namadiprelist', 'nama_prelist', 'namaprelist', 'prelist']) || namaUsaha
+        const kategori = get(['kategori', 'kategori_usaha', 'sektor', 'bidang_usaha'])
+        const kategori2025 = get(['kategori_2025', 'kategori2025'])
+        const kbliAkhir = get(['kbli_akhir', 'kbliakhir', 'kbli', 'kode_kbli', 'kodekbli'])
+        const kegUtama = get(['keg_utama', 'kegutama', 'kegiatan_utama', 'kegiatanutama', 'uraian_kegiatan', 'deskripsi_kegiatan', 'catatan'])
+        const linkFasih = get(['link_fasih', 'linkfasih', 'link', 'url_fasih', 'fasih'])
+        const keterangan = get(['keterangan', 'catatan', 'note', 'ket'])
+        const perbaikanKbli = get(['perbaikan_kbli', 'perbaikankbli', 'revisi_kbli', 'kbli_perbaikan'])
+        const status = get(['status', 'status_pengecekan', 'status_cek'])
+
+        // Parse Level 3, Level 4, Level 6
+        let level3Code = get(['level_3_full_code', 'level3fullcode', 'level_3_kode', 'level3kode'])
+        let level3Name = get(['level_3_name', 'level3name', 'level_3_nama', 'level3nama'])
+        const level3Combined = get(['level_3_kode_nama', 'level3kodenama', 'level_3', 'level3'])
+        if (level3Combined && (!level3Code || !level3Name)) {
+          const parts = level3Combined.split(/\s*[-:]\s*(.+)/)
+          if (parts.length >= 2) {
+            if (!level3Code) level3Code = parts[0].trim()
+            if (!level3Name) level3Name = parts[1].trim()
+          } else if (!level3Code) {
+            level3Code = level3Combined
+          }
+        }
+
+        let level4Code = get(['level_4_full_code', 'level4fullcode', 'level_4_kode', 'level4kode'])
+        let level4Name = get(['level_4_name', 'level4name', 'level_4_nama', 'level4nama'])
+        const level4Combined = get(['level_4_kode_nama', 'level4kodenama', 'level_4', 'level4'])
+        if (level4Combined && (!level4Code || !level4Name)) {
+          const parts = level4Combined.split(/\s*[-:]\s*(.+)/)
+          if (parts.length >= 2) {
+            if (!level4Code) level4Code = parts[0].trim()
+            if (!level4Name) level4Name = parts[1].trim()
+          } else if (!level4Code) {
+            level4Code = level4Combined
+          }
+        }
+
+        let level6Code = get(['level_6_full_code', 'level6fullcode', 'level_6_kode', 'level6kode'])
+        let level6Name = get(['level_6_name', 'level6name', 'level_6_nama', 'level6nama'])
+        const level6Combined = get(['level_6_kode_nama', 'level6kodenama', 'level_6', 'level6'])
+        if (level6Combined && (!level6Code || !level6Name)) {
+          const parts = level6Combined.split(/\s*[-:]\s*(.+)/)
+          if (parts.length >= 2) {
+            if (!level6Code) level6Code = parts[0].trim()
+            if (!level6Name) level6Name = parts[1].trim()
+          } else if (!level6Code) {
+            level6Code = level6Combined
+          }
+        }
+
+        // Checklist states
+        const checkKbliRaw = get(['check_kbli', 'checkkbli', 'pengecekan1', 'pengecekan1kbli'])
+        const checkNtbRaw = get(['check_ntb', 'checkntb', 'pengecekan2', 'pengecekan2ntbnegatif'])
+        const checkKewajaranRaw = get(['check_kewajaran', 'checkkewajaran', 'pengecekan3', 'pengecekan3kewajaran'])
+        const checkedBy = get(['checked_by', 'checkedby', 'dicek_oleh', 'dicekoleh', 'pemeriksa'])
+        const checkedAt = get(['checked_at', 'checkedat', 'tanggal_cek', 'tanggalcek'])
+
+        const parseBool = (val: string): boolean | null => {
+          if (!val) return null
+          const lower = val.toLowerCase()
+          if (['true', '1', 'ya', 'yes', 'sudah', 'selesai', 'v', 'x'].includes(lower)) return true
+          if (['false', '0', 'tidak', 'no', 'belum', '-'].includes(lower)) return false
+          return null
+        }
+
+        return {
           aid,
-          r.nama_usaha || r.namaUsaha || r.nama || '-',
-          r.nama_di_prelist || r.namaDiPrelist || '-',
-          r.kbli_akhir || r.kbliAkhir || '-',
-          r.kategori || '-',
-          r.kategori_2025 || r.kategori2025 || '-',
-          r.keg_utama || r.kegUtama || '-',
-          r.status || 'Belum Dicek',
-          r.link_fasih || r.linkFasih || '-',
-          r.keterangan || '-',
-          r.perbaikan_kbli || r.perbaikanKbli || '-'
-        ]).catch(() => null)
-
-        importedCount++
+          namaUsaha: namaUsaha || '-',
+          namaDiPrelist: namaDiPrelist || namaUsaha || '-',
+          kategori: kategori || 'Perdagangan',
+          kategori2025: kategori2025 || 'Perdagangan Eceran',
+          kbliAkhir: kbliAkhir || '-',
+          kegUtama: kegUtama || '-',
+          level3Code: level3Code || '-',
+          level3Name: level3Name || '-',
+          level4Code: level4Code || '-',
+          level4Name: level4Name || '-',
+          level6Code: level6Code || '-',
+          level6Name: level6Name || '-',
+          linkFasih: linkFasih || '-',
+          keterangan: keterangan || '-',
+          perbaikanKbli: perbaikanKbli || '-',
+          status: status || 'Belum Dicek',
+          checkKbli: parseBool(checkKbliRaw),
+          checkNtb: parseBool(checkNtbRaw),
+          checkKewajaran: parseBool(checkKewajaranRaw),
+          checkedBy,
+          checkedAt
+        }
       }
 
+      // Process in chunks of 20 for optimal concurrency
+      const chunkSize = 20
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize)
+        await Promise.all(
+          chunk.map(async (rawRow) => {
+            const item = extractRowFields(rawRow)
+            if (!item.aid || item.aid.trim() === '') return
+
+            try {
+              const existing = await pool.query(
+                `SELECT id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at, status FROM kbli_checks WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1)) LIMIT 1`,
+                [item.aid]
+              )
+
+              if (existing.rows.length > 0) {
+                const cur = existing.rows[0]
+                const newKbli = item.checkKbli !== null ? item.checkKbli : cur.check_kbli
+                const newNtb = item.checkNtb !== null ? item.checkNtb : cur.check_ntb
+                const newWajar = item.checkKewajaran !== null ? item.checkKewajaran : cur.check_kewajaran
+                const newBy = item.checkedBy || cur.checked_by || ''
+                const newAt = item.checkedAt || cur.checked_at || ''
+
+                let finalStatus = item.status && item.status !== 'Belum Dicek' ? item.status : cur.status
+                if (newKbli && newNtb && newWajar) {
+                  finalStatus = 'Selesai Dicek'
+                } else if (newKbli || newNtb || newWajar) {
+                  if (!finalStatus || finalStatus === 'Belum Dicek') {
+                    finalStatus = 'Sedang Dicek'
+                  }
+                }
+
+                await pool.query(`
+                  UPDATE kbli_checks
+                  SET
+                    nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
+                    nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
+                    kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
+                    kategori = COALESCE(NULLIF($5, '-'), kategori),
+                    kategori_2025 = COALESCE(NULLIF($6, '-'), kategori_2025),
+                    keg_utama = COALESCE(NULLIF($7, '-'), keg_utama),
+                    level_3_full_code = COALESCE(NULLIF($8, '-'), level_3_full_code),
+                    level_3_name = COALESCE(NULLIF($9, '-'), level_3_name),
+                    level_4_full_code = COALESCE(NULLIF($10, '-'), level_4_full_code),
+                    level_4_name = COALESCE(NULLIF($11, '-'), level_4_name),
+                    level_6_full_code = COALESCE(NULLIF($12, '-'), level_6_full_code),
+                    level_6_name = COALESCE(NULLIF($13, '-'), level_6_name),
+                    link_fasih = COALESCE(NULLIF($14, '-'), link_fasih),
+                    keterangan = COALESCE(NULLIF($15, '-'), keterangan),
+                    perbaikan_kbli = COALESCE(NULLIF($16, '-'), perbaikan_kbli),
+                    status = $17,
+                    check_kbli = $18,
+                    check_ntb = $19,
+                    check_kewajaran = $20,
+                    checked_by = COALESCE(NULLIF($21, ''), checked_by),
+                    checked_at = COALESCE(NULLIF($22, ''), checked_at)
+                  WHERE id = $23
+                `, [
+                  item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
+                  item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
+                  item.level4Code, item.level4Name, item.level6Code, item.level6Name,
+                  item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
+                  newKbli, newNtb, newWajar, newBy, newAt, cur.id
+                ])
+
+                await pool.query(`
+                  INSERT INTO assignment_checks (assignment_id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at, updated_at)
+                  VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                  ON CONFLICT (assignment_id) DO UPDATE SET
+                    check_kbli = EXCLUDED.check_kbli,
+                    check_ntb = EXCLUDED.check_ntb,
+                    check_kewajaran = EXCLUDED.check_kewajaran,
+                    checked_by = COALESCE(NULLIF(EXCLUDED.checked_by, ''), assignment_checks.checked_by),
+                    checked_at = COALESCE(NULLIF(EXCLUDED.checked_at, ''), assignment_checks.checked_at),
+                    updated_at = NOW()
+                `, [item.aid, newKbli, newNtb, newWajar, newBy, newAt]).catch(() => null)
+
+                updatedCount++
+              } else {
+                const isKbli = item.checkKbli ?? false
+                const isNtb = item.checkNtb ?? false
+                const isWajar = item.checkKewajaran ?? false
+                const byUser = item.checkedBy || ''
+                const atTime = item.checkedAt || ''
+
+                let finalStatus = item.status || 'Belum Dicek'
+                if (isKbli && isNtb && isWajar) {
+                  finalStatus = 'Selesai Dicek'
+                } else if (isKbli || isNtb || isWajar) {
+                  if (!finalStatus || finalStatus === 'Belum Dicek') {
+                    finalStatus = 'Sedang Dicek'
+                  }
+                }
+
+                await pool.query(`
+                  INSERT INTO kbli_checks (
+                    assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
+                    keg_utama, level_3_full_code, level_3_name, level_4_full_code, level_4_name,
+                    level_6_full_code, level_6_name, link_fasih, keterangan, perbaikan_kbli, status,
+                    check_kbli, check_ntb, check_kewajaran, checked_by, checked_at
+                  ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                    $18, $19, $20, $21, $22
+                  )
+                `, [
+                  item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
+                  item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
+                  item.level4Code, item.level4Name, item.level6Code, item.level6Name,
+                  item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
+                  isKbli, isNtb, isWajar, byUser, atTime
+                ])
+
+                await pool.query(`
+                  INSERT INTO assignment_checks (assignment_id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at, updated_at)
+                  VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                  ON CONFLICT (assignment_id) DO UPDATE SET
+                    check_kbli = EXCLUDED.check_kbli,
+                    check_ntb = EXCLUDED.check_ntb,
+                    check_kewajaran = EXCLUDED.check_kewajaran,
+                    checked_by = COALESCE(NULLIF(EXCLUDED.checked_by, ''), assignment_checks.checked_by),
+                    checked_at = COALESCE(NULLIF(EXCLUDED.checked_at, ''), assignment_checks.checked_at),
+                    updated_at = NOW()
+                `, [item.aid, isKbli, isNtb, isWajar, byUser, atTime]).catch(() => null)
+
+                createdCount++
+              }
+              importedCount++
+            } catch (itemErr) {
+              console.error(`Error importing row ${item.aid}:`, itemErr)
+            }
+          })
+        )
+      }
+
+      const byUser = (checkerName || 'Admin BPS').trim()
+      const initials = (byUser.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).slice(0, 2).map((s: string) => s[0]).join('') || 'AD').toUpperCase()
       await pool.query(`
         INSERT INTO activity_logs (user_initials, user_name, action_text)
         VALUES ($1, $2, $3)
-      `, ['AD', 'Admin BPS', `Mengimpor ${importedCount} data ke tabel kbli_checks`]).catch(() => null)
+      `, [initials, byUser, `Mengimpor ${importedCount} data ke tabel kbli_checks (${createdCount} baru, ${updatedCount} diperbarui)`]).catch(() => null)
 
-      return NextResponse.json({ ok: true, count: importedCount, message: `Berhasil mengimpor ${importedCount} data ke tabel kbli_checks.` })
+      return NextResponse.json({
+        ok: true,
+        count: importedCount,
+        created: createdCount,
+        updated: updatedCount,
+        message: `Berhasil menyimpan ${importedCount} data ke tabel kbli_checks (${createdCount} data baru, ${updatedCount} data diperbarui).`
+      })
     }
 
     return NextResponse.json({ error: 'Aksi tidak dikenal' }, { status: 400 })

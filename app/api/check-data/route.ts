@@ -316,60 +316,148 @@ export async function POST(request: Request) {
       })
     }
 
-    // Bulk CSV import
+    // Robust Bulk CSV import with field normalization & upsert
     if (action === 'import' && Array.isArray(rows)) {
       let importedCount = 0
-      for (const r of rows) {
-        const aid = r.assignment_id || r.assignmentId
-        if (!aid) continue
+      let updatedCount = 0
+      let createdCount = 0
 
-        // Insert or update kbli_checks
-        await pool.query(`
-          INSERT INTO kbli_checks (
-            assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
-            keg_utama, status, link_fasih
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          ON CONFLICT DO NOTHING
-        `, [
+      const extractRow = (row: Record<string, any>) => {
+        const map = new Map<string, string>()
+        for (const [k, v] of Object.entries(row)) {
+          if (v !== undefined && v !== null) {
+            map.set(String(k).toLowerCase().replace(/[^a-z0-9]/g, ''), String(v).trim())
+          }
+        }
+        const get = (keys: string[]): string => {
+          for (const k of keys) {
+            const val = map.get(k.toLowerCase().replace(/[^a-z0-9]/g, ''))
+            if (val !== undefined && val !== '') return val
+          }
+          return ''
+        }
+
+        const aid = get(['assignment_id', 'assignmentid', 'id_assignment', 'id', 'kode_assignment', 'assignment'])
+        const namaUsaha = get(['nama_usaha', 'namausaha', 'nama', 'nama_perusahaan', 'perusahaan', 'nama_principal', 'principal'])
+        const namaDiPrelist = get(['nama_di_prelist', 'namadiprelist', 'nama_prelist', 'prelist']) || namaUsaha
+        const kategori = get(['kategori', 'kategori_usaha', 'sektor', 'bidang_usaha'])
+        const kategori2025 = get(['kategori_2025', 'kategori2025'])
+        const kbliAkhir = get(['kbli_akhir', 'kbliakhir', 'kbli', 'kode_kbli', 'kodekbli'])
+        const kegUtama = get(['keg_utama', 'kegutama', 'kegiatan_utama', 'kegiatanutama', 'uraian_kegiatan', 'deskripsi_kegiatan', 'catatan'])
+        const linkFasih = get(['link_fasih', 'linkfasih', 'link', 'url_fasih', 'fasih'])
+        const keterangan = get(['keterangan', 'catatan', 'note', 'ket'])
+        const perbaikanKbli = get(['perbaikan_kbli', 'perbaikankbli', 'revisi_kbli', 'kbli_perbaikan'])
+        const status = get(['status', 'status_pengecekan', 'status_cek'])
+        const nilaiTambah = get(['nilai_tambah', 'nilaitambah', 'ntb'])
+        const omzet = get(['r27a_omzet', 'r27aomzet', 'omzet'])
+        const biayaBeli = get(['r26c_biaya_pembelian', 'biaya_pembelian', 'biayabeli'])
+
+        return {
           aid,
-          r.nama_usaha || r.namaUsaha || r.nama || '-',
-          r.nama_di_prelist || r.namaDiPrelist || '-',
-          r.kbli_akhir || r.kbliAkhir || '-',
-          r.kategori || '-',
-          r.kategori_2025 || r.kategori2025 || '-',
-          r.keg_utama || r.kegUtama || '-',
-          r.status || 'Belum Dicek',
-          r.link_fasih || r.linkFasih || '-'
-        ]).catch(() => null)
+          namaUsaha: namaUsaha || '-',
+          namaDiPrelist: namaDiPrelist || namaUsaha || '-',
+          kategori: kategori || 'Perdagangan',
+          kategori2025: kategori2025 || 'Perdagangan Eceran',
+          kbliAkhir: kbliAkhir || '-',
+          kegUtama: kegUtama || '-',
+          linkFasih: linkFasih || '-',
+          keterangan: keterangan || '-',
+          perbaikanKbli: perbaikanKbli || '-',
+          status: status || 'Belum Dicek',
+          nilaiTambah: nilaiTambah || '0',
+          omzet: omzet || '0',
+          biayaBeli: biayaBeli || '0'
+        }
+      }
 
-        // Insert or update negative_ntb_checks
-        await pool.query(`
-          INSERT INTO negative_ntb_checks (
-            assignment_id, nama_principal, kategori, kbli_akhir, catatan,
-            nilai_tambah, r27a_omzet, r26c_biaya_pembelian, link_fasih
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          ON CONFLICT DO NOTHING
-        `, [
-          aid,
-          r.nama_principal || r.namaPrincipal || r.nama_usaha || '-',
-          r.kategori || '-',
-          r.kbli_akhir || r.kbliAkhir || '-',
-          r.catatan || '-',
-          r.nilai_tambah || r.nilaiTambah || '0',
-          r.r27a_omzet || r.omzet || '0',
-          r.r26c_biaya_pembelian || r.biaya_pembelian || '0',
-          r.link_fasih || r.linkFasih || '-'
-        ]).catch(() => null)
+      const chunkSize = 20
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize)
+        await Promise.all(
+          chunk.map(async (rawRow) => {
+            const item = extractRow(rawRow)
+            if (!item.aid || item.aid.trim() === '') return
 
-        importedCount++
+            try {
+              // 1. kbli_checks
+              const existingKbli = await pool.query(
+                `SELECT id FROM kbli_checks WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1)) LIMIT 1`,
+                [item.aid]
+              )
+              if (existingKbli.rows.length > 0) {
+                await pool.query(`
+                  UPDATE kbli_checks
+                  SET
+                    nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
+                    nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
+                    kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
+                    kategori = COALESCE(NULLIF($5, '-'), kategori),
+                    kategori_2025 = COALESCE(NULLIF($6, '-'), kategori_2025),
+                    keg_utama = COALESCE(NULLIF($7, '-'), keg_utama),
+                    link_fasih = COALESCE(NULLIF($8, '-'), link_fasih),
+                    keterangan = COALESCE(NULLIF($9, '-'), keterangan),
+                    perbaikan_kbli = COALESCE(NULLIF($10, '-'), perbaikan_kbli)
+                  WHERE id = $11
+                `, [item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.linkFasih, item.keterangan, item.perbaikanKbli, existingKbli.rows[0].id])
+                updatedCount++
+              } else {
+                await pool.query(`
+                  INSERT INTO kbli_checks (
+                    assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
+                    keg_utama, status, link_fasih, keterangan, perbaikan_kbli
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                `, [item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.status, item.linkFasih, item.keterangan, item.perbaikanKbli])
+                createdCount++
+              }
+
+              // 2. negative_ntb_checks
+              const existingNtb = await pool.query(
+                `SELECT id FROM negative_ntb_checks WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1)) LIMIT 1`,
+                [item.aid]
+              )
+              if (existingNtb.rows.length > 0) {
+                await pool.query(`
+                  UPDATE negative_ntb_checks
+                  SET
+                    nama_principal = COALESCE(NULLIF($2, '-'), nama_principal),
+                    kategori = COALESCE(NULLIF($3, '-'), kategori),
+                    kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
+                    catatan = COALESCE(NULLIF($5, '-'), catatan),
+                    nilai_tambah = COALESCE(NULLIF($6, '0'), nilai_tambah),
+                    r27a_omzet = COALESCE(NULLIF($7, '0'), r27a_omzet),
+                    r26c_biaya_pembelian = COALESCE(NULLIF($8, '0'), r26c_biaya_pembelian),
+                    link_fasih = COALESCE(NULLIF($9, '-'), link_fasih)
+                  WHERE id = $10
+                `, [item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih, existingNtb.rows[0].id])
+              } else {
+                await pool.query(`
+                  INSERT INTO negative_ntb_checks (
+                    assignment_id, nama_principal, kategori, kbli_akhir, catatan,
+                    nilai_tambah, r27a_omzet, r26c_biaya_pembelian, link_fasih
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                `, [item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih])
+              }
+
+              importedCount++
+            } catch (err) {
+              console.error(`Error importing row ${item.aid}:`, err)
+            }
+          })
+        )
       }
 
       await pool.query(`
         INSERT INTO activity_logs (user_initials, user_name, action_text)
         VALUES ($1, $2, $3)
-      `, ['AD', 'Admin BPS', `Mengimpor ${importedCount} data assignment ke sistem`]).catch(() => null)
+      `, ['AD', 'Admin BPS', `Mengimpor ${importedCount} data CSV ke database (${createdCount} baru, ${updatedCount} diperbarui)`]).catch(() => null)
 
-      return NextResponse.json({ ok: true, count: importedCount, message: `Berhasil mengimpor ${importedCount} data.` })
+      return NextResponse.json({
+        ok: true,
+        count: importedCount,
+        created: createdCount,
+        updated: updatedCount,
+        message: `Berhasil mengimpor ${importedCount} data (${createdCount} baru, ${updatedCount} diperbarui).`
+      })
     }
 
     // Update single assignment

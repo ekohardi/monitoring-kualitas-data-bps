@@ -339,6 +339,9 @@ export async function ensureTables() {
         action_text TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE INDEX IF NOT EXISTS idx_kbli_checks_assignment_id ON kbli_checks (assignment_id);
+      CREATE INDEX IF NOT EXISTS idx_assignment_checks_aid ON assignment_checks (assignment_id);
     `)
 
     // Seed initial checks into assignment_checks if empty

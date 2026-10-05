@@ -607,6 +607,91 @@ function exportToCsv(filename: string, headers: string[], rows: (string | number
   URL.revokeObjectURL(url)
 }
 
+function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[]; delimiter: string } {
+  // Strip UTF-8 BOM if present
+  let cleanText = text.replace(/^\uFEFF/, '').trim()
+  if (!cleanText) return { headers: [], rows: [], delimiter: ',' }
+
+  // Auto-detect delimiter from first non-empty line
+  const firstLine = cleanText.split(/\r?\n/).find(l => l.trim() !== '') || ''
+  let delimiter = ','
+  const commaCount = (firstLine.match(/,/g) || []).length
+  const semiCount = (firstLine.match(/;/g) || []).length
+  const tabCount = (firstLine.match(/\t/g) || []).length
+  if (semiCount > commaCount && semiCount >= tabCount) {
+    delimiter = ';'
+  } else if (tabCount > commaCount && tabCount > semiCount) {
+    delimiter = '\t'
+  }
+
+  // Parse fields respecting quotes and line breaks
+  const rows: string[][] = []
+  let currentRow: string[] = []
+  let currentField = ''
+  let inQuotes = false
+
+  for (let i = 0; i < cleanText.length; i++) {
+    const char = cleanText[i]
+    const nextChar = cleanText[i + 1]
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (nextChar === '"') {
+          currentField += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        currentField += char
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true
+      } else if (char === delimiter) {
+        currentRow.push(currentField.trim())
+        currentField = ''
+      } else if (char === '\r') {
+        // ignore CR
+      } else if (char === '\n') {
+        currentRow.push(currentField.trim())
+        if (currentRow.some(f => f !== '')) {
+          rows.push(currentRow)
+        }
+        currentRow = []
+        currentField = ''
+      } else {
+        currentField += char
+      }
+    }
+  }
+
+  if (currentField !== '' || currentRow.length > 0) {
+    currentRow.push(currentField.trim())
+    if (currentRow.some(f => f !== '')) {
+      rows.push(currentRow)
+    }
+  }
+
+  if (rows.length === 0) return { headers: [], rows: [], delimiter }
+
+  const rawHeaders = rows[0].map(h => h.replace(/^["']|["']$/g, '').trim())
+  const dataRows = rows.slice(1)
+
+  const parsedObjects: Record<string, string>[] = []
+  for (const r of dataRows) {
+    const obj: Record<string, string> = {}
+    rawHeaders.forEach((h, idx) => {
+      if (h) {
+        obj[h] = (r[idx] ?? '').replace(/^["']|["']$/g, '').trim()
+      }
+    })
+    parsedObjects.push(obj)
+  }
+
+  return { headers: rawHeaders, rows: parsedObjects, delimiter }
+}
+
 function CrossTableDetail({
   item,
   onDownload,
@@ -714,6 +799,17 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const [selectedKategori, setSelectedKategori] = useState('Semua Kategori')
   const [pageSize, setPageSize] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
+
+  interface ImportPreviewData {
+    fileName: string
+    delimiter: string
+    totalRows: number
+    validRows: any[]
+    previewRows: any[]
+    targetTable: string
+  }
+  const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
 
   const isLiveTab = tab === 'kbli' || tab === 'kbli_check'
   const title = tab === 'stage3'
@@ -1125,49 +1221,80 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const inputEl = e.target
     const reader = new FileReader()
     reader.onload = async (evt) => {
       const text = evt.target?.result as string
-      if (!text) return
-      const lines = text.split(/\r?\n/).filter(l => l.trim() !== '')
-      if (lines.length < 2) {
-        alert('File CSV kosong atau tidak memiliki baris data.')
+      if (!text || text.trim() === '') {
+        alert('File CSV kosong atau tidak terbaca.')
+        inputEl.value = ''
         return
       }
 
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase())
-      const rows = lines.slice(1).map(line => {
-        const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''))
-        const obj: Record<string, string> = {}
-        headers.forEach((h, idx) => {
-          obj[h] = parts[idx] || ''
-        })
-        return obj
+      const { rows, delimiter } = parseCsv(text)
+      if (rows.length === 0) {
+        alert('File CSV tidak memiliki baris data.')
+        inputEl.value = ''
+        return
+      }
+
+      // Filter rows that have a valid assignment_id
+      const validRows = rows.filter(r => {
+        const map = new Map<string, string>()
+        for (const [k, v] of Object.entries(r)) {
+          map.set(k.toLowerCase().replace(/[^a-z0-9]/g, ''), String(v))
+        }
+        const aid = map.get('assignmentid') || map.get('idassignment') || map.get('kodeassignment') || map.get('id') || map.get('assignment')
+        return aid && aid.trim() !== ''
       })
 
-      const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
-      try {
-        setLoading(true)
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'import', rows })
-        })
-        const result = await res.json()
-        if (res.ok) {
-          alert(result.message || 'Import data berhasil!')
-          fetchData(false)
-        } else {
-          alert(result.error || 'Gagal mengimpor data ke database.')
-        }
-      } catch {
-        alert('Gagal menghubungi server untuk import.')
-      } finally {
-        setLoading(false)
-        if (e.target) e.target.value = ''
+      if (validRows.length === 0) {
+        alert('Tidak ditemukan kolom "assignment_id" yang valid pada baris header file CSV.\nPastikan kolom "assignment_id" tersedia di baris pertama.')
+        inputEl.value = ''
+        return
       }
+
+      const delimiterName = delimiter === ';' ? 'Titik Koma (;)' : delimiter === '\t' ? 'Tab (\\t)' : 'Koma (,)'
+      setImportPreview({
+        fileName: file.name,
+        delimiter: delimiterName,
+        totalRows: validRows.length,
+        validRows,
+        previewRows: validRows.slice(0, 5),
+        targetTable: tab === 'kbli_check' ? 'kbli_checks' : 'kbli_checks & negative_ntb_checks'
+      })
+      inputEl.value = ''
     }
     reader.readAsText(file)
+  }
+
+  const executeImport = async () => {
+    if (!importPreview || importPreview.validRows.length === 0) return
+    setImportLoading(true)
+    const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'import',
+          rows: importPreview.validRows,
+          checkerName: currentUser?.username || currentUser?.name || 'Admin BPS'
+        })
+      })
+      const result = await res.json()
+      if (res.ok) {
+        setImportPreview(null)
+        alert(result.message || `Berhasil mengimpor ${importPreview.totalRows} data ke database!`)
+        fetchData(false)
+      } else {
+        alert(result.error || 'Gagal menyimpan data ke database.')
+      }
+    } catch {
+      alert('Gagal menghubungi server untuk import data.')
+    } finally {
+      setImportLoading(false)
+    }
   }
 
   const activeCount = isLiveTab ? filteredCrossData.length : filteredRows.length
@@ -1643,6 +1770,122 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PREVIEW IMPORT CSV */}
+      {importPreview && (
+        <div className="modal-backdrop" onClick={() => !importLoading && setImportPreview(null)}>
+          <div className="user-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '780px', width: '95%' }}>
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow blue">IMPORT CSV DATABASE</p>
+                <h2>Import Data ke Tabel {tab === 'kbli_check' ? 'kbli_checks' : 'Database'}</h2>
+              </div>
+              {!importLoading && (
+                <button className="close-modal" onClick={() => setImportPreview(null)} aria-label="Tutup modal import"><X /></button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="import-summary-grid">
+                <div className="import-stat-card">
+                  <span className="stat-label">Nama File</span>
+                  <strong className="stat-value">{importPreview.fileName}</strong>
+                </div>
+                <div className="import-stat-card">
+                  <span className="stat-label">Format Pemisah</span>
+                  <strong className="stat-value">{importPreview.delimiter}</strong>
+                </div>
+                <div className="import-stat-card">
+                  <span className="stat-label">Baris Valid</span>
+                  <strong className="stat-value accent">{importPreview.totalRows} Assignment</strong>
+                </div>
+                <div className="import-stat-card">
+                  <span className="stat-label">Target Tabel</span>
+                  <strong className="stat-value blue">Tabel {importPreview.targetTable}</strong>
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', fontSize: '12px', color: '#475569' }}>
+                <strong style={{ color: '#0f172a' }}>Info Sinkronisasi: </strong>
+                Data akan disimpan langsung ke tabel <code>{tab === 'kbli_check' ? 'kbli_checks' : 'database'}</code>. Jika <code>assignment_id</code> sudah ada di database, baris tersebut akan <strong>diperbarui (update)</strong>. Jika belum ada, akan <strong>ditambahkan (insert)</strong> sebagai baris baru.
+              </div>
+
+              <div>
+                <p style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '8px' }}>
+                  Preview Data ({Math.min(5, importPreview.previewRows.length)} dari {importPreview.totalRows} baris):
+                </p>
+                <div className="preview-table-wrap">
+                  <table className="preview-mini-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>assignment_id</th>
+                        <th>Nama Usaha</th>
+                        <th>KBLI Akhir</th>
+                        <th>Kategori</th>
+                        <th>Kegiatan Utama / Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.previewRows.map((r, idx) => {
+                        const map = new Map<string, string>()
+                        for (const [k, v] of Object.entries(r)) {
+                          map.set(k.toLowerCase().replace(/[^a-z0-9]/g, ''), String(v))
+                        }
+                        const aid = map.get('assignmentid') || map.get('id') || '-'
+                        const nama = map.get('namausaha') || map.get('nama') || '-'
+                        const kbli = map.get('kbliakhir') || map.get('kbli') || '-'
+                        const kat = map.get('kategori') || map.get('kategori2025') || '-'
+                        const ket = map.get('kegiatanutama') || map.get('kegutama') || map.get('keterangan') || map.get('catatan') || '-'
+                        return (
+                          <tr key={idx}>
+                            <td>{idx + 1}</td>
+                            <td><strong>{aid}</strong></td>
+                            <td>{nama}</td>
+                            <td>{kbli}</td>
+                            <td>{kat}</td>
+                            <td><small>{ket}</small></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: '6px' }}>
+                <button
+                  type="button"
+                  className="outline"
+                  disabled={importLoading}
+                  onClick={() => setImportPreview(null)}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={importLoading}
+                  onClick={executeImport}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  {importLoading ? (
+                    <>
+                      <RotateCw className="rotated" />
+                      <span>Menyimpan ke {tab === 'kbli_check' ? 'kbli_checks' : 'database'}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload />
+                      <span>Simpan {importPreview.totalRows} Data ke Database</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
