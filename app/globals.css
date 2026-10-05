@@ -586,3 +586,103 @@ button { cursor: pointer; }
   .preview-mini-table tr:hover td {
     background: #f8fafc;
   }
+
+  /* Upload Progress Bar */
+  .upload-progress-box {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    animation: fadeIn 0.2s ease-out;
+  }
+  .upload-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .upload-progress-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 9999px;
+  }
+  .upload-progress-pill.running {
+    background: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+  }
+  .upload-progress-pill.success {
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
+  }
+  .upload-progress-pill.error {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+  }
+  .upload-progress-bar-track {
+    width: 100%;
+    height: 12px;
+    background: #e2e8f0;
+    border-radius: 9999px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+  .upload-progress-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }
+  .upload-progress-bar-fill.running {
+    background: #2563eb;
+    background-image: linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.25) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.25) 50%,
+      rgba(255, 255, 255, 0.25) 75%,
+      transparent 75%,
+      transparent
+    );
+    background-size: 24px 24px;
+    animation: progressStripes 0.8s linear infinite;
+  }
+  .upload-progress-bar-fill.success {
+    background: linear-gradient(90deg, #10b981, #059669);
+  }
+  .upload-progress-bar-fill.error {
+    background: linear-gradient(90deg, #ef4444, #dc2626);
+  }
+  @keyframes progressStripes {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 24px 0;
+    }
+  }
+  .upload-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: #64748b;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .upload-progress-status {
+    color: #334155;
+    font-weight: 500;
+  }
+  .upload-progress-stats {
+    font-weight: 600;
+    color: #475569;
+  }

@@ -248,7 +248,45 @@ export async function POST(request: Request) {
 
     await ensureTables()
     const body = await request.json()
-    const { action, assignmentId, key, value, checkerName, kbliData, ntbData, rows } = body
+    const { action, assignmentId, key, value, checkerName, checkerUserId, kbliData, ntbData, rows } = body
+
+    // Inspect whether kbli_checks and negative_ntb_checks have user_id column
+    const [kbliColCheck, ntbColCheck] = await Promise.all([
+      pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE LOWER(table_name) = 'kbli_checks' AND LOWER(column_name) = 'user_id'
+      `).catch(() => ({ rows: [] })),
+      pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE LOWER(table_name) = 'negative_ntb_checks' AND LOWER(column_name) = 'user_id'
+      `).catch(() => ({ rows: [] }))
+    ])
+    const hasUserIdCol = kbliColCheck.rows.length > 0
+    const hasNtbUserIdCol = ntbColCheck.rows.length > 0
+
+    if (hasUserIdCol) {
+      await pool.query(`ALTER TABLE kbli_checks ALTER COLUMN user_id DROP NOT NULL`).catch(() => null)
+    }
+    if (hasNtbUserIdCol) {
+      await pool.query(`ALTER TABLE negative_ntb_checks ALTER COLUMN user_id DROP NOT NULL`).catch(() => null)
+    }
+
+    let fallbackUserId: string | null = (checkerUserId && String(checkerUserId).trim() !== '') ? String(checkerUserId).trim() : null
+    const uRes = await pool.query(`SELECT id FROM "user" ORDER BY "createdAt" ASC LIMIT 1`).catch(() => ({ rows: [] }))
+    if (!fallbackUserId && uRes.rows.length > 0 && uRes.rows[0]?.id) {
+      fallbackUserId = String(uRes.rows[0].id)
+    }
+    if (!fallbackUserId) {
+      const sysId = 'bps-admin-user'
+      await pool.query(`
+        INSERT INTO "user" (id, name, email, "emailVerified", role, "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+      `, [sysId, 'Admin BPS Tuban', 'admin@bps.tuban.go.id', true, 'Administrator']).catch(() => null)
+      fallbackUserId = sysId
+    }
 
     // Real-time checklist toggle
     if (action === 'toggle_check' && assignmentId && key) {
@@ -354,6 +392,7 @@ export async function POST(request: Request) {
         const nilaiTambah = get(['nilai_tambah', 'nilaitambah', 'ntb'])
         const omzet = get(['r27a_omzet', 'r27aomzet', 'omzet'])
         const biayaBeli = get(['r26c_biaya_pembelian', 'biaya_pembelian', 'biayabeli'])
+        const userId = get(['user_id', 'userid', 'id_user', 'iduser', 'checker_user_id', 'checkeruserid', 'user'])
 
         if ((!aid || aid.trim() === '') && (namaUsaha && namaUsaha !== '-')) {
           aid = `TBN-IMP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
@@ -361,6 +400,7 @@ export async function POST(request: Request) {
 
         return {
           aid,
+          userId: userId || null,
           namaUsaha: namaUsaha || '-',
           namaDiPrelist: namaDiPrelist || namaUsaha || '-',
           kategori: kategori || 'Perdagangan',
@@ -385,6 +425,7 @@ export async function POST(request: Request) {
           chunk.map(async (rawRow) => {
             const item = extractRow(rawRow)
             if (!item.aid || item.aid.trim() === '') return
+            const rowUserId = item.userId || fallbackUserId
 
             try {
               // 1. kbli_checks
@@ -393,29 +434,57 @@ export async function POST(request: Request) {
                 [item.aid]
               )
               if (existingKbli.rows.length > 0) {
-                await pool.query(`
-                  UPDATE kbli_checks
-                  SET
-                    assignment_id = $1,
-                    nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
-                    nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
-                    kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
-                    kategori = COALESCE(NULLIF($5, '-'), kategori),
-                    kategori_2025 = COALESCE(NULLIF($6, '-'), kategori_2025),
-                    keg_utama = COALESCE(NULLIF($7, '-'), keg_utama),
-                    link_fasih = COALESCE(NULLIF($8, '-'), link_fasih),
-                    keterangan = COALESCE(NULLIF($9, '-'), keterangan),
-                    perbaikan_kbli = COALESCE(NULLIF($10, '-'), perbaikan_kbli)
-                  WHERE id = $11
-                `, [item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.linkFasih, item.keterangan, item.perbaikanKbli, existingKbli.rows[0].id])
+                if (hasUserIdCol) {
+                  await pool.query(`
+                    UPDATE kbli_checks
+                    SET
+                      user_id = COALESCE($1, user_id),
+                      assignment_id = $2,
+                      nama_usaha = COALESCE(NULLIF($3, '-'), nama_usaha),
+                      nama_di_prelist = COALESCE(NULLIF($4, '-'), nama_di_prelist),
+                      kbli_akhir = COALESCE(NULLIF($5, '-'), kbli_akhir),
+                      kategori = COALESCE(NULLIF($6, '-'), kategori),
+                      kategori_2025 = COALESCE(NULLIF($7, '-'), kategori_2025),
+                      keg_utama = COALESCE(NULLIF($8, '-'), keg_utama),
+                      link_fasih = COALESCE(NULLIF($9, '-'), link_fasih),
+                      keterangan = COALESCE(NULLIF($10, '-'), keterangan),
+                      perbaikan_kbli = COALESCE(NULLIF($11, '-'), perbaikan_kbli)
+                    WHERE id = $12
+                  `, [rowUserId, item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.linkFasih, item.keterangan, item.perbaikanKbli, existingKbli.rows[0].id])
+                } else {
+                  await pool.query(`
+                    UPDATE kbli_checks
+                    SET
+                      assignment_id = $1,
+                      nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
+                      nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
+                      kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
+                      kategori = COALESCE(NULLIF($5, '-'), kategori),
+                      kategori_2025 = COALESCE(NULLIF($6, '-'), kategori_2025),
+                      keg_utama = COALESCE(NULLIF($7, '-'), keg_utama),
+                      link_fasih = COALESCE(NULLIF($8, '-'), link_fasih),
+                      keterangan = COALESCE(NULLIF($9, '-'), keterangan),
+                      perbaikan_kbli = COALESCE(NULLIF($10, '-'), perbaikan_kbli)
+                    WHERE id = $11
+                  `, [item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.linkFasih, item.keterangan, item.perbaikanKbli, existingKbli.rows[0].id])
+                }
                 updatedCount++
               } else {
-                await pool.query(`
-                  INSERT INTO kbli_checks (
-                    assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
-                    keg_utama, status, link_fasih, keterangan, perbaikan_kbli
-                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                `, [item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.status, item.linkFasih, item.keterangan, item.perbaikanKbli])
+                if (hasUserIdCol) {
+                  await pool.query(`
+                    INSERT INTO kbli_checks (
+                      user_id, assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
+                      keg_utama, status, link_fasih, keterangan, perbaikan_kbli
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                  `, [rowUserId, item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.status, item.linkFasih, item.keterangan, item.perbaikanKbli])
+                } else {
+                  await pool.query(`
+                    INSERT INTO kbli_checks (
+                      assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
+                      keg_utama, status, link_fasih, keterangan, perbaikan_kbli
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                  `, [item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori, item.kategori2025, item.kegUtama, item.status, item.linkFasih, item.keterangan, item.perbaikanKbli])
+                }
                 createdCount++
               }
 
@@ -425,27 +494,54 @@ export async function POST(request: Request) {
                 [item.aid]
               )
               if (existingNtb.rows.length > 0) {
-                await pool.query(`
-                  UPDATE negative_ntb_checks
-                  SET
-                    assignment_id = $1,
-                    nama_principal = COALESCE(NULLIF($2, '-'), nama_principal),
-                    kategori = COALESCE(NULLIF($3, '-'), kategori),
-                    kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
-                    catatan = COALESCE(NULLIF($5, '-'), catatan),
-                    nilai_tambah = COALESCE(NULLIF($6, '0'), nilai_tambah),
-                    r27a_omzet = COALESCE(NULLIF($7, '0'), r27a_omzet),
-                    r26c_biaya_pembelian = COALESCE(NULLIF($8, '0'), r26c_biaya_pembelian),
-                    link_fasih = COALESCE(NULLIF($9, '-'), link_fasih)
-                  WHERE id = $10
-                `, [item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih, existingNtb.rows[0].id])
+                if (hasNtbUserIdCol) {
+                  await pool.query(`
+                    UPDATE negative_ntb_checks
+                    SET
+                      user_id = COALESCE($1, user_id),
+                      assignment_id = $2,
+                      nama_principal = COALESCE(NULLIF($3, '-'), nama_principal),
+                      kategori = COALESCE(NULLIF($4, '-'), kategori),
+                      kbli_akhir = COALESCE(NULLIF($5, '-'), kbli_akhir),
+                      catatan = COALESCE(NULLIF($6, '-'), catatan),
+                      nilai_tambah = COALESCE(NULLIF($7, '0'), nilai_tambah),
+                      r27a_omzet = COALESCE(NULLIF($8, '0'), r27a_omzet),
+                      r26c_biaya_pembelian = COALESCE(NULLIF($9, '0'), r26c_biaya_pembelian),
+                      link_fasih = COALESCE(NULLIF($10, '-'), link_fasih)
+                    WHERE id = $11
+                  `, [rowUserId, item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih, existingNtb.rows[0].id])
+                } else {
+                  await pool.query(`
+                    UPDATE negative_ntb_checks
+                    SET
+                      assignment_id = $1,
+                      nama_principal = COALESCE(NULLIF($2, '-'), nama_principal),
+                      kategori = COALESCE(NULLIF($3, '-'), kategori),
+                      kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
+                      catatan = COALESCE(NULLIF($5, '-'), catatan),
+                      nilai_tambah = COALESCE(NULLIF($6, '0'), nilai_tambah),
+                      r27a_omzet = COALESCE(NULLIF($7, '0'), r27a_omzet),
+                      r26c_biaya_pembelian = COALESCE(NULLIF($8, '0'), r26c_biaya_pembelian),
+                      link_fasih = COALESCE(NULLIF($9, '-'), link_fasih)
+                    WHERE id = $10
+                  `, [item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih, existingNtb.rows[0].id])
+                }
               } else {
-                await pool.query(`
-                  INSERT INTO negative_ntb_checks (
-                    assignment_id, nama_principal, kategori, kbli_akhir, catatan,
-                    nilai_tambah, r27a_omzet, r26c_biaya_pembelian, link_fasih
-                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                `, [item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih])
+                if (hasNtbUserIdCol) {
+                  await pool.query(`
+                    INSERT INTO negative_ntb_checks (
+                      user_id, assignment_id, nama_principal, kategori, kbli_akhir, catatan,
+                      nilai_tambah, r27a_omzet, r26c_biaya_pembelian, link_fasih
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                  `, [rowUserId, item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih])
+                } else {
+                  await pool.query(`
+                    INSERT INTO negative_ntb_checks (
+                      assignment_id, nama_principal, kategori, kbli_akhir, catatan,
+                      nilai_tambah, r27a_omzet, r26c_biaya_pembelian, link_fasih
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                  `, [item.aid, item.namaUsaha, item.kategori, item.kbliAkhir, item.kegUtama, item.nilaiTambah, item.omzet, item.biayaBeli, item.linkFasih])
+                }
               }
 
               importedCount++
@@ -554,36 +650,73 @@ export async function POST(request: Request) {
 
     // Create new assignment record
     if (action === 'create' && assignmentId) {
-      await pool.query(`
-        INSERT INTO kbli_checks (
-          assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori,
-          keg_utama, status, link_fasih
-        ) VALUES ($1, $2, $2, $3, $4, $5, $6, $7)
-      `, [
-        assignmentId,
-        kbliData?.namaUsaha || '-',
-        kbliData?.kbliAkhir || '-',
-        kbliData?.kategori || 'Perdagangan',
-        kbliData?.kegUtama || '-',
-        kbliData?.status || 'Belum Dicek',
-        kbliData?.linkFasih || '-'
-      ])
+      if (hasUserIdCol) {
+        await pool.query(`
+          INSERT INTO kbli_checks (
+            user_id, assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori,
+            keg_utama, status, link_fasih
+          ) VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8)
+        `, [
+          fallbackUserId,
+          assignmentId,
+          kbliData?.namaUsaha || '-',
+          kbliData?.kbliAkhir || '-',
+          kbliData?.kategori || 'Perdagangan',
+          kbliData?.kegUtama || '-',
+          kbliData?.status || 'Belum Dicek',
+          kbliData?.linkFasih || '-'
+        ])
+      } else {
+        await pool.query(`
+          INSERT INTO kbli_checks (
+            assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori,
+            keg_utama, status, link_fasih
+          ) VALUES ($1, $2, $2, $3, $4, $5, $6, $7)
+        `, [
+          assignmentId,
+          kbliData?.namaUsaha || '-',
+          kbliData?.kbliAkhir || '-',
+          kbliData?.kategori || 'Perdagangan',
+          kbliData?.kegUtama || '-',
+          kbliData?.status || 'Belum Dicek',
+          kbliData?.linkFasih || '-'
+        ])
+      }
 
-      await pool.query(`
-        INSERT INTO negative_ntb_checks (
-          assignment_id, nama_principal, kategori, kbli_akhir, catatan,
-          nilai_tambah, r27a_omzet, link_fasih
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      `, [
-        assignmentId,
-        ntbData?.namaPrincipal || kbliData?.namaUsaha || '-',
-        ntbData?.kategori || kbliData?.kategori || 'Perdagangan',
-        ntbData?.kbliAkhir || kbliData?.kbliAkhir || '-',
-        ntbData?.catatan || '-',
-        ntbData?.nilaiTambah || '0',
-        ntbData?.r27aOmzet || '0',
-        ntbData?.linkFasih || kbliData?.linkFasih || '-'
-      ])
+      if (hasNtbUserIdCol) {
+        await pool.query(`
+          INSERT INTO negative_ntb_checks (
+            user_id, assignment_id, nama_principal, kategori, kbli_akhir, catatan,
+            nilai_tambah, r27a_omzet, link_fasih
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
+          fallbackUserId,
+          assignmentId,
+          ntbData?.namaPrincipal || kbliData?.namaUsaha || '-',
+          ntbData?.kategori || kbliData?.kategori || 'Perdagangan',
+          ntbData?.kbliAkhir || kbliData?.kbliAkhir || '-',
+          ntbData?.catatan || '-',
+          ntbData?.nilaiTambah || '0',
+          ntbData?.r27aOmzet || '0',
+          ntbData?.linkFasih || kbliData?.linkFasih || '-'
+        ])
+      } else {
+        await pool.query(`
+          INSERT INTO negative_ntb_checks (
+            assignment_id, nama_principal, kategori, kbli_akhir, catatan,
+            nilai_tambah, r27a_omzet, link_fasih
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [
+          assignmentId,
+          ntbData?.namaPrincipal || kbliData?.namaUsaha || '-',
+          ntbData?.kategori || kbliData?.kategori || 'Perdagangan',
+          ntbData?.kbliAkhir || kbliData?.kbliAkhir || '-',
+          ntbData?.catatan || '-',
+          ntbData?.nilaiTambah || '0',
+          ntbData?.r27aOmzet || '0',
+          ntbData?.linkFasih || kbliData?.linkFasih || '-'
+        ])
+      }
 
       const newUsaha = kbliData?.namaUsaha || assignmentId
       await pool.query(`

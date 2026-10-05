@@ -332,6 +332,25 @@ export async function ensureTables() {
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS keterangan TEXT;
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS perbaikan_kbli TEXT;
 
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS user_id TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS user_id TEXT;
+
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'kbli_checks' AND column_name = 'user_id'
+        ) THEN
+          ALTER TABLE kbli_checks ALTER COLUMN user_id DROP NOT NULL;
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'negative_ntb_checks' AND column_name = 'user_id'
+        ) THEN
+          ALTER TABLE negative_ntb_checks ALTER COLUMN user_id DROP NOT NULL;
+        END IF;
+      END $$;
+
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
         user_initials TEXT,
@@ -343,6 +362,17 @@ export async function ensureTables() {
       CREATE INDEX IF NOT EXISTS idx_kbli_checks_assignment_id ON kbli_checks (assignment_id);
       CREATE INDEX IF NOT EXISTS idx_assignment_checks_aid ON assignment_checks (assignment_id);
     `)
+
+    try {
+      await pool.query(`ALTER TABLE kbli_checks ALTER COLUMN user_id DROP NOT NULL`)
+    } catch {
+      // Column might not exist or already nullable
+    }
+    try {
+      await pool.query(`ALTER TABLE negative_ntb_checks ALTER COLUMN user_id DROP NOT NULL`)
+    } catch {
+      // Column might not exist or already nullable
+    }
 
     // Seed initial checks into assignment_checks if empty
     const checkCountRes = await pool.query(`SELECT COUNT(*) AS c FROM assignment_checks`).catch(() => ({ rows: [{ c: 0 }] }))

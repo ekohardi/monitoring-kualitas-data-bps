@@ -197,7 +197,35 @@ export async function POST(request: Request) {
 
     await ensureTables()
     const body = await request.json()
-    const { action, assignmentId, key, value, checkerName, kbliData, rows } = body
+    const { action, assignmentId, key, value, checkerName, checkerUserId, kbliData, rows } = body
+
+    // Inspect whether kbli_checks has user_id column and ensure it is not blocking inserts
+    const userColCheck = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE LOWER(table_name) = 'kbli_checks' AND LOWER(column_name) = 'user_id'
+    `).catch(() => ({ rows: [] }))
+    const hasUserIdCol = userColCheck.rows.length > 0
+
+    if (hasUserIdCol) {
+      await pool.query(`ALTER TABLE kbli_checks ALTER COLUMN user_id DROP NOT NULL`).catch(() => null)
+    }
+
+    // Determine fallback user_id from "user" table if needed
+    let fallbackUserId: string | null = (checkerUserId && String(checkerUserId).trim() !== '') ? String(checkerUserId).trim() : null
+    const uRes = await pool.query(`SELECT id FROM "user" ORDER BY "createdAt" ASC LIMIT 1`).catch(() => ({ rows: [] }))
+    if (!fallbackUserId && uRes.rows.length > 0 && uRes.rows[0]?.id) {
+      fallbackUserId = String(uRes.rows[0].id)
+    }
+    if (!fallbackUserId) {
+      const sysId = 'bps-admin-user'
+      await pool.query(`
+        INSERT INTO "user" (id, name, email, "emailVerified", role, "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+      `, [sysId, 'Admin BPS Tuban', 'admin@bps.tuban.go.id', true, 'Administrator']).catch(() => null)
+      fallbackUserId = sysId
+    }
 
     // 1. Toggle single checklist item and persist to database in real-time
     if (action === 'toggle_check' && assignmentId && key) {
@@ -278,33 +306,65 @@ export async function POST(request: Request) {
 
     // 2. Update KBLI data
     if (action === 'update' && assignmentId && kbliData) {
-      await pool.query(`
-        UPDATE kbli_checks
-        SET 
-          nama_usaha = COALESCE($2, nama_usaha),
-          nama_di_prelist = COALESCE($3, nama_di_prelist),
-          kbli_akhir = COALESCE($4, kbli_akhir),
-          kategori = COALESCE($5, kategori),
-          kategori_2025 = COALESCE($6, kategori_2025),
-          keg_utama = COALESCE($7, keg_utama),
-          status = COALESCE($8, status),
-          link_fasih = COALESCE($9, link_fasih),
-          keterangan = COALESCE($10, keterangan),
-          perbaikan_kbli = COALESCE($11, perbaikan_kbli)
-        WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
-      `, [
-        assignmentId,
-        kbliData.namaUsaha,
-        kbliData.namaDiPrelist,
-        kbliData.kbliAkhir,
-        kbliData.kategori,
-        kbliData.kategori2025,
-        kbliData.kegUtama,
-        kbliData.status,
-        kbliData.linkFasih,
-        kbliData.keterangan,
-        kbliData.perbaikanKbli
-      ])
+      if (hasUserIdCol && fallbackUserId) {
+        await pool.query(`
+          UPDATE kbli_checks
+          SET 
+            nama_usaha = COALESCE($2, nama_usaha),
+            nama_di_prelist = COALESCE($3, nama_di_prelist),
+            kbli_akhir = COALESCE($4, kbli_akhir),
+            kategori = COALESCE($5, kategori),
+            kategori_2025 = COALESCE($6, kategori_2025),
+            keg_utama = COALESCE($7, keg_utama),
+            status = COALESCE($8, status),
+            link_fasih = COALESCE($9, link_fasih),
+            keterangan = COALESCE($10, keterangan),
+            perbaikan_kbli = COALESCE($11, perbaikan_kbli),
+            user_id = COALESCE(user_id, $12)
+          WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
+        `, [
+          assignmentId,
+          kbliData.namaUsaha,
+          kbliData.namaDiPrelist,
+          kbliData.kbliAkhir,
+          kbliData.kategori,
+          kbliData.kategori2025,
+          kbliData.kegUtama,
+          kbliData.status,
+          kbliData.linkFasih,
+          kbliData.keterangan,
+          kbliData.perbaikanKbli,
+          fallbackUserId
+        ])
+      } else {
+        await pool.query(`
+          UPDATE kbli_checks
+          SET 
+            nama_usaha = COALESCE($2, nama_usaha),
+            nama_di_prelist = COALESCE($3, nama_di_prelist),
+            kbli_akhir = COALESCE($4, kbli_akhir),
+            kategori = COALESCE($5, kategori),
+            kategori_2025 = COALESCE($6, kategori_2025),
+            keg_utama = COALESCE($7, keg_utama),
+            status = COALESCE($8, status),
+            link_fasih = COALESCE($9, link_fasih),
+            keterangan = COALESCE($10, keterangan),
+            perbaikan_kbli = COALESCE($11, perbaikan_kbli)
+          WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
+        `, [
+          assignmentId,
+          kbliData.namaUsaha,
+          kbliData.namaDiPrelist,
+          kbliData.kbliAkhir,
+          kbliData.kategori,
+          kbliData.kategori2025,
+          kbliData.kegUtama,
+          kbliData.status,
+          kbliData.linkFasih,
+          kbliData.keterangan,
+          kbliData.perbaikanKbli
+        ])
+      }
 
       const byUser = (checkerName || 'Petugas BPS').trim()
       const initials = (byUser.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).slice(0, 2).map((s: string) => s[0]).join('') || 'BP').toUpperCase()
@@ -318,24 +378,46 @@ export async function POST(request: Request) {
 
     // 3. Create new KBLI assignment
     if (action === 'create' && assignmentId) {
-      await pool.query(`
-        INSERT INTO kbli_checks (
-          assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori,
-          kategori_2025, keg_utama, status, link_fasih, keterangan, perbaikan_kbli
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `, [
-        assignmentId,
-        kbliData?.namaUsaha || '-',
-        kbliData?.namaDiPrelist || kbliData?.namaUsaha || '-',
-        kbliData?.kbliAkhir || '-',
-        kbliData?.kategori || 'Perdagangan',
-        kbliData?.kategori2025 || 'Perdagangan Eceran',
-        kbliData?.kegUtama || '-',
-        kbliData?.status || 'Belum Dicek',
-        kbliData?.linkFasih || '-',
-        kbliData?.keterangan || '-',
-        kbliData?.perbaikanKbli || '-'
-      ])
+      if (hasUserIdCol) {
+        await pool.query(`
+          INSERT INTO kbli_checks (
+            user_id, assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori,
+            kategori_2025, keg_utama, status, link_fasih, keterangan, perbaikan_kbli
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `, [
+          fallbackUserId,
+          assignmentId,
+          kbliData?.namaUsaha || '-',
+          kbliData?.namaDiPrelist || kbliData?.namaUsaha || '-',
+          kbliData?.kbliAkhir || '-',
+          kbliData?.kategori || 'Perdagangan',
+          kbliData?.kategori2025 || 'Perdagangan Eceran',
+          kbliData?.kegUtama || '-',
+          kbliData?.status || 'Belum Dicek',
+          kbliData?.linkFasih || '-',
+          kbliData?.keterangan || '-',
+          kbliData?.perbaikanKbli || '-'
+        ])
+      } else {
+        await pool.query(`
+          INSERT INTO kbli_checks (
+            assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori,
+            kategori_2025, keg_utama, status, link_fasih, keterangan, perbaikan_kbli
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+          assignmentId,
+          kbliData?.namaUsaha || '-',
+          kbliData?.namaDiPrelist || kbliData?.namaUsaha || '-',
+          kbliData?.kbliAkhir || '-',
+          kbliData?.kategori || 'Perdagangan',
+          kbliData?.kategori2025 || 'Perdagangan Eceran',
+          kbliData?.kegUtama || '-',
+          kbliData?.status || 'Belum Dicek',
+          kbliData?.linkFasih || '-',
+          kbliData?.keterangan || '-',
+          kbliData?.perbaikanKbli || '-'
+        ])
+      }
 
       const byUser = (checkerName || 'Admin BPS').trim()
       const initials = (byUser.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).slice(0, 2).map((s: string) => s[0]).join('') || 'AD').toUpperCase()
@@ -438,6 +520,7 @@ export async function POST(request: Request) {
         const checkKewajaranRaw = get(['check_kewajaran', 'checkkewajaran', 'pengecekan3', 'pengecekan3kewajaran'])
         const checkedBy = get(['checked_by', 'checkedby', 'dicek_oleh', 'dicekoleh', 'pemeriksa'])
         const checkedAt = get(['checked_at', 'checkedat', 'tanggal_cek', 'tanggalcek'])
+        const userId = get(['user_id', 'userid', 'id_user', 'iduser', 'checker_user_id', 'checkeruserid', 'user'])
 
         const parseBool = (val: string): boolean | null => {
           if (!val) return null
@@ -449,6 +532,7 @@ export async function POST(request: Request) {
 
         return {
           aid,
+          userId: userId || null,
           namaUsaha: namaUsaha || '-',
           namaDiPrelist: namaDiPrelist || namaUsaha || '-',
           kategori: kategori || 'Perdagangan',
@@ -483,6 +567,7 @@ export async function POST(request: Request) {
           chunk.map(async (rawRow) => {
             const item = extractRowFields(rawRow)
             if (!item.aid || item.aid.trim() === '') return
+            const rowUserId = item.userId || fallbackUserId
 
             try {
               const existing = await pool.query(
@@ -507,39 +592,76 @@ export async function POST(request: Request) {
                   }
                 }
 
-                await pool.query(`
-                  UPDATE kbli_checks
-                  SET
-                    assignment_id = $1,
-                    nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
-                    nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
-                    kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
-                    kategori = COALESCE(NULLIF($5, '-'), kategori),
-                    kategori_2025 = COALESCE(NULLIF($6, '-'), kategori_2025),
-                    keg_utama = COALESCE(NULLIF($7, '-'), keg_utama),
-                    level_3_full_code = COALESCE(NULLIF($8, '-'), level_3_full_code),
-                    level_3_name = COALESCE(NULLIF($9, '-'), level_3_name),
-                    level_4_full_code = COALESCE(NULLIF($10, '-'), level_4_full_code),
-                    level_4_name = COALESCE(NULLIF($11, '-'), level_4_name),
-                    level_6_full_code = COALESCE(NULLIF($12, '-'), level_6_full_code),
-                    level_6_name = COALESCE(NULLIF($13, '-'), level_6_name),
-                    link_fasih = COALESCE(NULLIF($14, '-'), link_fasih),
-                    keterangan = COALESCE(NULLIF($15, '-'), keterangan),
-                    perbaikan_kbli = COALESCE(NULLIF($16, '-'), perbaikan_kbli),
-                    status = $17,
-                    check_kbli = $18,
-                    check_ntb = $19,
-                    check_kewajaran = $20,
-                    checked_by = COALESCE(NULLIF($21, ''), checked_by),
-                    checked_at = COALESCE(NULLIF($22, ''), checked_at)
-                  WHERE id = $23
-                `, [
-                  item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
-                  item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
-                  item.level4Code, item.level4Name, item.level6Code, item.level6Name,
-                  item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
-                  newKbli, newNtb, newWajar, newBy, newAt, cur.id
-                ])
+                if (hasUserIdCol) {
+                  await pool.query(`
+                    UPDATE kbli_checks
+                    SET
+                      user_id = COALESCE($1, user_id),
+                      assignment_id = $2,
+                      nama_usaha = COALESCE(NULLIF($3, '-'), nama_usaha),
+                      nama_di_prelist = COALESCE(NULLIF($4, '-'), nama_di_prelist),
+                      kbli_akhir = COALESCE(NULLIF($5, '-'), kbli_akhir),
+                      kategori = COALESCE(NULLIF($6, '-'), kategori),
+                      kategori_2025 = COALESCE(NULLIF($7, '-'), kategori_2025),
+                      keg_utama = COALESCE(NULLIF($8, '-'), keg_utama),
+                      level_3_full_code = COALESCE(NULLIF($9, '-'), level_3_full_code),
+                      level_3_name = COALESCE(NULLIF($10, '-'), level_3_name),
+                      level_4_full_code = COALESCE(NULLIF($11, '-'), level_4_full_code),
+                      level_4_name = COALESCE(NULLIF($12, '-'), level_4_name),
+                      level_6_full_code = COALESCE(NULLIF($13, '-'), level_6_full_code),
+                      level_6_name = COALESCE(NULLIF($14, '-'), level_6_name),
+                      link_fasih = COALESCE(NULLIF($15, '-'), link_fasih),
+                      keterangan = COALESCE(NULLIF($16, '-'), keterangan),
+                      perbaikan_kbli = COALESCE(NULLIF($17, '-'), perbaikan_kbli),
+                      status = $18,
+                      check_kbli = $19,
+                      check_ntb = $20,
+                      check_kewajaran = $21,
+                      checked_by = COALESCE(NULLIF($22, ''), checked_by),
+                      checked_at = COALESCE(NULLIF($23, ''), checked_at)
+                    WHERE id = $24
+                  `, [
+                    rowUserId, item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
+                    item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
+                    item.level4Code, item.level4Name, item.level6Code, item.level6Name,
+                    item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
+                    newKbli, newNtb, newWajar, newBy, newAt, cur.id
+                  ])
+                } else {
+                  await pool.query(`
+                    UPDATE kbli_checks
+                    SET
+                      assignment_id = $1,
+                      nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
+                      nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
+                      kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
+                      kategori = COALESCE(NULLIF($5, '-'), kategori),
+                      kategori_2025 = COALESCE(NULLIF($6, '-'), kategori_2025),
+                      keg_utama = COALESCE(NULLIF($7, '-'), keg_utama),
+                      level_3_full_code = COALESCE(NULLIF($8, '-'), level_3_full_code),
+                      level_3_name = COALESCE(NULLIF($9, '-'), level_3_name),
+                      level_4_full_code = COALESCE(NULLIF($10, '-'), level_4_full_code),
+                      level_4_name = COALESCE(NULLIF($11, '-'), level_4_name),
+                      level_6_full_code = COALESCE(NULLIF($12, '-'), level_6_full_code),
+                      level_6_name = COALESCE(NULLIF($13, '-'), level_6_name),
+                      link_fasih = COALESCE(NULLIF($14, '-'), link_fasih),
+                      keterangan = COALESCE(NULLIF($15, '-'), keterangan),
+                      perbaikan_kbli = COALESCE(NULLIF($16, '-'), perbaikan_kbli),
+                      status = $17,
+                      check_kbli = $18,
+                      check_ntb = $19,
+                      check_kewajaran = $20,
+                      checked_by = COALESCE(NULLIF($21, ''), checked_by),
+                      checked_at = COALESCE(NULLIF($22, ''), checked_at)
+                    WHERE id = $23
+                  `, [
+                    item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
+                    item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
+                    item.level4Code, item.level4Name, item.level6Code, item.level6Name,
+                    item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
+                    newKbli, newNtb, newWajar, newBy, newAt, cur.id
+                  ])
+                }
 
                 await pool.query(`
                   INSERT INTO assignment_checks (assignment_id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at, updated_at)
@@ -570,23 +692,44 @@ export async function POST(request: Request) {
                   }
                 }
 
-                await pool.query(`
-                  INSERT INTO kbli_checks (
-                    assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
-                    keg_utama, level_3_full_code, level_3_name, level_4_full_code, level_4_name,
-                    level_6_full_code, level_6_name, link_fasih, keterangan, perbaikan_kbli, status,
-                    check_kbli, check_ntb, check_kewajaran, checked_by, checked_at
-                  ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                    $18, $19, $20, $21, $22
-                  )
-                `, [
-                  item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
-                  item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
-                  item.level4Code, item.level4Name, item.level6Code, item.level6Name,
-                  item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
-                  isKbli, isNtb, isWajar, byUser, atTime
-                ])
+                if (hasUserIdCol) {
+                  await pool.query(`
+                    INSERT INTO kbli_checks (
+                      user_id,
+                      assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
+                      keg_utama, level_3_full_code, level_3_name, level_4_full_code, level_4_name,
+                      level_6_full_code, level_6_name, link_fasih, keterangan, perbaikan_kbli, status,
+                      check_kbli, check_ntb, check_kewajaran, checked_by, checked_at
+                    ) VALUES (
+                      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                      $18, $19, $20, $21, $22, $23
+                    )
+                  `, [
+                    rowUserId, item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
+                    item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
+                    item.level4Code, item.level4Name, item.level6Code, item.level6Name,
+                    item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
+                    isKbli, isNtb, isWajar, byUser, atTime
+                  ])
+                } else {
+                  await pool.query(`
+                    INSERT INTO kbli_checks (
+                      assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
+                      keg_utama, level_3_full_code, level_3_name, level_4_full_code, level_4_name,
+                      level_6_full_code, level_6_name, link_fasih, keterangan, perbaikan_kbli, status,
+                      check_kbli, check_ntb, check_kewajaran, checked_by, checked_at
+                    ) VALUES (
+                      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                      $18, $19, $20, $21, $22
+                    )
+                  `, [
+                    item.aid, item.namaUsaha, item.namaDiPrelist, item.kbliAkhir, item.kategori,
+                    item.kategori2025, item.kegUtama, item.level3Code, item.level3Name,
+                    item.level4Code, item.level4Name, item.level6Code, item.level6Name,
+                    item.linkFasih, item.keterangan, item.perbaikanKbli, finalStatus,
+                    isKbli, isNtb, isWajar, byUser, atTime
+                  ])
+                }
 
                 await pool.query(`
                   INSERT INTO assignment_checks (assignment_id, check_kbli, check_ntb, check_kewajaran, checked_by, checked_at, updated_at)

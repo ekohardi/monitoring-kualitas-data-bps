@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
+import { AlertCircle, BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
 type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'kbli_check' | 'users'
 
@@ -880,8 +880,22 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     previewRows: any[]
     targetTable: string
   }
+
+  interface ImportProgressState {
+    active: boolean
+    current: number
+    total: number
+    percent: number
+    created: number
+    updated: number
+    statusText: string
+    isFinished: boolean
+    error?: string | null
+  }
+
   const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null)
   const [importLoading, setImportLoading] = useState(false)
+  const [importProgress, setImportProgress] = useState<ImportProgressState | null>(null)
 
   const isLiveTab = tab === 'kbli' || tab === 'kbli_check'
   const title = tab === 'stage3'
@@ -1197,6 +1211,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       action: 'update',
       assignmentId: editItem.assignmentId,
       checkerName: currentUser?.username || currentUser?.name || 'Petugas BPS',
+      checkerUserId: currentUser?.id || null,
       kbliData: {
         namaUsaha: formData.get('namaUsaha') as string,
         namaDiPrelist: formData.get('namaDiPrelist') as string,
@@ -1254,6 +1269,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       action: 'create',
       assignmentId: aid,
       checkerName: currentUser?.username || currentUser?.name || 'Admin BPS',
+      checkerUserId: currentUser?.id || null,
       kbliData: {
         namaUsaha: formData.get('namaUsaha') as string,
         kbliAkhir: formData.get('kbliAkhir') as string,
@@ -1334,6 +1350,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       }
 
       const delimiterName = delimiter === ';' ? 'Titik Koma (;)' : delimiter === '\t' ? 'Tab (\\t)' : 'Koma (,)'
+      setImportProgress(null)
       setImportPreview({
         fileName: file.name,
         delimiter: delimiterName,
@@ -1350,27 +1367,91 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const executeImport = async () => {
     if (!importPreview || importPreview.validRows.length === 0) return
     setImportLoading(true)
+    const allRows = importPreview.validRows
+    const totalRows = allRows.length
     const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
+    const targetName = tab === 'kbli_check' ? 'kbli_checks' : 'database'
+
+    setImportProgress({
+      active: true,
+      current: 0,
+      total: totalRows,
+      percent: 0,
+      created: 0,
+      updated: 0,
+      statusText: `Menyiapkan pengunggahan ${totalRows} data ke ${targetName}...`,
+      isFinished: false,
+      error: null
+    })
+
+    // Batch size of 50 rows per network request for real-time progress feedback
+    const BATCH_SIZE = 50
+    let totalCreated = 0
+    let totalUpdated = 0
+    let totalProcessed = 0
+
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'import',
-          rows: importPreview.validRows,
-          checkerName: currentUser?.username || currentUser?.name || 'Admin BPS'
+      for (let i = 0; i < totalRows; i += BATCH_SIZE) {
+        const chunk = allRows.slice(i, i + BATCH_SIZE)
+        const chunkNum = Math.floor(i / BATCH_SIZE) + 1
+        const totalChunks = Math.ceil(totalRows / BATCH_SIZE)
+
+        setImportProgress(prev => prev ? {
+          ...prev,
+          statusText: `Mengunggah batch ${chunkNum} dari ${totalChunks} (${i + 1} - ${Math.min(i + BATCH_SIZE, totalRows)} dari ${totalRows} data)...`
+        } : null)
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'import',
+            rows: chunk,
+            checkerName: currentUser?.username || currentUser?.name || 'Admin BPS',
+            checkerUserId: currentUser?.id || null
+          })
         })
-      })
-      const result = await res.json()
-      if (res.ok) {
-        setImportPreview(null)
-        alert(result.message || `Berhasil mengimpor ${importPreview.totalRows} data ke database!`)
-        fetchData(false)
-      } else {
-        alert(result.error || 'Gagal menyimpan data ke database.')
+
+        const result = await res.json()
+        if (!res.ok) {
+          throw new Error(result.error || `Gagal menyimpan batch ${chunkNum}`)
+        }
+
+        totalProcessed += chunk.length
+        totalCreated += (result.created || 0)
+        totalUpdated += (result.updated || 0)
+        const pct = Math.min(100, Math.round((totalProcessed / totalRows) * 100))
+
+        setImportProgress({
+          active: true,
+          current: totalProcessed,
+          total: totalRows,
+          percent: pct,
+          created: totalCreated,
+          updated: totalUpdated,
+          statusText: pct >= 100
+            ? `Berhasil menyimpan seluruh ${totalRows} data!`
+            : `Menyimpan ${totalProcessed} dari ${totalRows} data (${pct}%)...`,
+          isFinished: pct >= 100,
+          error: null
+        })
       }
-    } catch {
-      alert('Gagal menghubungi server untuk import data.')
+
+      setImportProgress(prev => prev ? {
+        ...prev,
+        percent: 100,
+        isFinished: true,
+        statusText: `Selesai! Berhasil mengimpor ${totalProcessed} data (${totalCreated} data baru, ${totalUpdated} diperbarui).`
+      } : null)
+
+      fetchData(false)
+    } catch (err: any) {
+      console.error('Import error:', err)
+      setImportProgress(prev => prev ? {
+        ...prev,
+        isFinished: false,
+        error: err?.message || 'Terjadi kesalahan saat mengunggah data ke database.'
+      } : null)
     } finally {
       setImportLoading(false)
     }
@@ -1477,6 +1558,37 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             </>
           )}
         </div>
+
+        {/* PROGRESS BAR STICKY TOP BANNER WHEN MODAL IS CLOSED */}
+        {importProgress && importProgress.active && !importPreview && (
+          <div style={{ padding: '10px 18px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <RotateCw size={16} className={importProgress.isFinished ? '' : 'rotated'} style={{ color: importProgress.isFinished ? '#10b981' : '#2563eb', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#1e3a8a', marginBottom: '5px' }}>
+                <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {importProgress.statusText}
+                </span>
+                <span style={{ marginLeft: '8px' }}>{importProgress.percent}%</span>
+              </div>
+              <div className="upload-progress-bar-track" style={{ height: '7px' }}>
+                <div
+                  className={`upload-progress-bar-fill ${importProgress.isFinished ? 'success' : importProgress.error ? 'error' : 'running'}`}
+                  style={{ width: `${importProgress.percent}%` }}
+                />
+              </div>
+            </div>
+            {importProgress.isFinished && (
+              <button
+                type="button"
+                className="outline"
+                style={{ height: '28px', fontSize: '11px', padding: '0 10px', background: 'white' }}
+                onClick={() => setImportProgress(null)}
+              >
+                Tutup
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="table-wrap combined-table">
           <table>
@@ -1956,34 +2068,119 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 </button>
               </div>
 
+              {/* PROGRESS BAR WHILE UPLOADING DATA */}
+              {importProgress && importProgress.active && (
+                <div className="upload-progress-box">
+                  <div className="upload-progress-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {importProgress.isFinished ? (
+                        <CheckCircle2 size={18} style={{ color: '#10b981' }} />
+                      ) : importProgress.error ? (
+                        <AlertCircle size={18} style={{ color: '#ef4444' }} />
+                      ) : (
+                        <RotateCw size={18} className="rotated" style={{ color: '#2563eb' }} />
+                      )}
+                      <strong style={{ fontSize: '13px', color: importProgress.error ? '#b91c1c' : '#0f172a' }}>
+                        {importProgress.isFinished
+                          ? 'Import Data Selesai & Berhasil!'
+                          : importProgress.error
+                          ? 'Proses Upload Terhenti'
+                          : `Menyimpan Data ke Tabel ${tab === 'kbli_check' ? 'kbli_checks' : 'Database'}...`}
+                      </strong>
+                    </div>
+                    <span className={`upload-progress-pill ${importProgress.isFinished ? 'success' : importProgress.error ? 'error' : 'running'}`}>
+                      {importProgress.percent}%
+                    </span>
+                  </div>
+
+                  <div className="upload-progress-bar-track">
+                    <div
+                      className={`upload-progress-bar-fill ${importProgress.isFinished ? 'success' : importProgress.error ? 'error' : 'running'}`}
+                      style={{ width: `${importProgress.percent}%` }}
+                    />
+                  </div>
+
+                  <div className="upload-progress-meta">
+                    <span className="upload-progress-status">
+                      {importProgress.error ? importProgress.error : importProgress.statusText}
+                    </span>
+                    <span className="upload-progress-stats">
+                      {importProgress.current} / {importProgress.total} Baris ({importProgress.created} baru, {importProgress.updated} diperbarui)
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="modal-actions" style={{ marginTop: '6px' }}>
-                <button
-                  type="button"
-                  className="outline"
-                  disabled={importLoading}
-                  onClick={() => setImportPreview(null)}
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={importLoading}
-                  onClick={executeImport}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  {importLoading ? (
-                    <>
-                      <RotateCw className="rotated" />
-                      <span>Menyimpan ke {tab === 'kbli_check' ? 'kbli_checks' : 'database'}...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload />
-                      <span>Simpan {importPreview.totalRows} Data ke Database</span>
-                    </>
-                  )}
-                </button>
+                {importProgress?.isFinished ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{ background: '#059669', borderColor: '#059669', display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}
+                    onClick={() => {
+                      setImportPreview(null)
+                      setImportProgress(null)
+                    }}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Selesai & Tutup ({importProgress.total} Data)</span>
+                  </button>
+                ) : importProgress?.error ? (
+                  <>
+                    <button
+                      type="button"
+                      className="outline"
+                      onClick={() => {
+                        setImportPreview(null)
+                        setImportProgress(null)
+                      }}
+                    >
+                      Tutup
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={executeImport}
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                      <RotateCw size={14} />
+                      <span>Coba Lagi</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="outline"
+                      disabled={importLoading}
+                      onClick={() => {
+                        setImportPreview(null)
+                        setImportProgress(null)
+                      }}
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={importLoading}
+                      onClick={executeImport}
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                      {importLoading ? (
+                        <>
+                          <RotateCw size={14} className="rotated" />
+                          <span>Menyimpan ({importProgress?.percent || 0}%)...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={14} />
+                          <span>Simpan {importPreview.totalRows} Data ke Database</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

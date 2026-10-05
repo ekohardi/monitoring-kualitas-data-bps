@@ -50,6 +50,7 @@ export const verification = pgTable('verification', {
 
 export const kbliChecks = pgTable('kbli_checks', {
   id: integer('id').primaryKey(),
+  userId: text('user_id'),
   level3FullCode: text('level_3_full_code'),
   level3Name: text('level_3_name'),
   level4FullCode: text('level_4_full_code'),
@@ -71,6 +72,7 @@ export const kbliChecks = pgTable('kbli_checks', {
 
 export const negativeNtbChecks = pgTable('negative_ntb_checks', {
   id: integer('id').primaryKey(),
+  userId: text('user_id'),
   level2FullCode: text('level_2_full_code'),
   level6FullCode: text('level_6_full_code'),
   assignmentId: text('assignment_id'),
