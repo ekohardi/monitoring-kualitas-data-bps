@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
+import { BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
 type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'kbli_check' | 'users'
 
@@ -583,6 +583,78 @@ type CrossCheckRecord = {
     linkFasih?: string
     extraFields?: Record<string, any>
   } | null
+}
+
+function downloadCsvTemplate(type: 'kbli' | 'kbli_check' = 'kbli_check') {
+  const headers = [
+    'assignment_id',
+    'nama_di_prelist',
+    'nama_usaha',
+    'kategori',
+    'kategori_2025',
+    'kbli_akhir',
+    'kegiatan_utama',
+    'level_3_kode_nama',
+    'level_4_kode_nama',
+    'level_6_kode_nama',
+    'keterangan',
+    'perbaikan_kbli',
+    'link_fasih'
+  ]
+
+  const templateRows = [
+    [
+      'TBN-00130',
+      'Toko Berkah Mandiri',
+      'Toko Berkah Mandiri',
+      'Perdagangan',
+      'Perdagangan Eceran',
+      '47111',
+      'Penjualan kebutuhan pokok sembako, beras, minyak goreng, dan gula',
+      'G.47 - Perdagangan Eceran',
+      '471 - Perdagangan Eceran di Toko',
+      '47111 - Perdagangan Eceran Berbagai Barang yang Utamanya Makanan di Toko',
+      'Data omzet dan identitas sudah sesuai pembukuan',
+      '47111',
+      'https://fasih.bps.go.id/survey/TBN-00130'
+    ],
+    [
+      'TBN-00131',
+      'Bengkel Motor Cak No',
+      'Bengkel Motor Cak No',
+      'Jasa',
+      'Jasa Reparasi',
+      '45201',
+      'Jasa service dan reparasi sepeda motor roda dua, servis berkala, ganti oli mesin',
+      'S.95 - Reparasi Komputer & Keperluan Pribadi',
+      '452 - Reparasi Kendaraan Bermotor',
+      '45201 - Reparasi Mesin dan Kendaraan Bermotor Roda Dua',
+      'Data lapangan sudah sesuai prelist',
+      '45201',
+      'https://fasih.bps.go.id/survey/TBN-00131'
+    ],
+    [
+      'TBN-00132',
+      'RM Seafood Pantura Tuban',
+      'RM Seafood Pantura Tuban',
+      'Akomodasi & Makan Minum',
+      'Penyediaan Makan Minum',
+      '56101',
+      'Penyedia makanan laut olahan rajungan, cumi-cumi, dan aneka seafood pesisir',
+      'I.56 - Penyediaan Makanan dan Minuman',
+      '561 - Restoran dan Rumah Makan',
+      '56101 - Restoran dan Rumah Makan Tradisional Pesisir',
+      'Biaya operasional sudah diverifikasi tim lapangan',
+      '56101',
+      'https://fasih.bps.go.id/survey/TBN-00132'
+    ]
+  ]
+
+  exportToCsv(
+    type === 'kbli_check' ? 'template_import_kbli_checks.csv' : 'template_import_check_data.csv',
+    headers,
+    templateRows
+  )
 }
 
 function exportToCsv(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
@@ -1238,18 +1310,25 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         return
       }
 
-      // Filter rows that have a valid assignment_id
-      const validRows = rows.filter(r => {
+      // Filter & normalize rows that have a valid assignment_id or auto-generate fallback
+      const validRows = rows.map((r, idx) => {
         const map = new Map<string, string>()
         for (const [k, v] of Object.entries(r)) {
           map.set(k.toLowerCase().replace(/[^a-z0-9]/g, ''), String(v))
         }
-        const aid = map.get('assignmentid') || map.get('idassignment') || map.get('kodeassignment') || map.get('id') || map.get('assignment')
-        return aid && aid.trim() !== ''
-      })
+        let aid = map.get('assignmentid') || map.get('idassignment') || map.get('kodeassignment') || map.get('assignment') || map.get('id') || map.get('idunit') || map.get('kodesampel') || map.get('nobs') || map.get('nus') || map.get('kode') || map.get('no')
+        const nama = map.get('namausaha') || map.get('nama') || map.get('namadiprelist') || map.get('perusahaan')
+        if ((!aid || aid.trim() === '') && (nama && nama.trim() !== '')) {
+          aid = `TBN-IMP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+        }
+        return {
+          ...r,
+          assignment_id: aid || r.assignment_id || r.assignmentId || ''
+        }
+      }).filter(r => Boolean(r.assignment_id && r.assignment_id.trim() !== ''))
 
       if (validRows.length === 0) {
-        alert('Tidak ditemukan kolom "assignment_id" yang valid pada baris header file CSV.\nPastikan kolom "assignment_id" tersedia di baris pertama.')
+        alert('Tidak ditemukan baris data yang valid pada file CSV.\nSilakan gunakan tombol "Unduh Template CSV" untuk format kolom resmi.')
         inputEl.value = ''
         return
       }
@@ -1381,6 +1460,13 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 style={{ display: 'none' }}
                 onChange={handleCsvImport}
               />
+              <button
+                className="outline"
+                onClick={() => downloadCsvTemplate(tab === 'kbli_check' ? 'kbli_check' : 'kbli')}
+                title="Unduh format template CSV resmi untuk import ke tabel database"
+              >
+                <FileSpreadsheet /> Unduh Template CSV
+              </button>
               <button
                 className="outline"
                 onClick={() => document.getElementById('csv-file-input')?.click()}
@@ -1854,6 +1940,20 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '10px 14px', background: '#f1f5f9', borderRadius: '6px' }}>
+                <span style={{ fontSize: '11px', color: '#475569' }}>
+                  Format CSV belum sesuai? Anda dapat mengunduh format template resmi kami:
+                </span>
+                <button
+                  type="button"
+                  className="outline"
+                  style={{ height: '30px', fontSize: '11px', padding: '0 10px', gap: '6px', background: 'white' }}
+                  onClick={() => downloadCsvTemplate(tab === 'kbli_check' ? 'kbli_check' : 'kbli')}
+                >
+                  <FileSpreadsheet size={13} /> Unduh Template CSV
+                </button>
               </div>
 
               <div className="modal-actions" style={{ marginTop: '6px' }}>

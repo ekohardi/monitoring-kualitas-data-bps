@@ -337,7 +337,10 @@ export async function POST(request: Request) {
           return ''
         }
 
-        const aid = get(['assignment_id', 'assignmentid', 'id_assignment', 'id', 'kode_assignment', 'assignment'])
+        let aid = get([
+          'assignment_id', 'assignmentid', 'id_assignment', 'kode_assignment', 'assignment',
+          'id', 'id_unit', 'kode_sampel', 'no_sampel', 'nobs', 'nus', 'kode', 'no', 'nomor'
+        ])
         const namaUsaha = get(['nama_usaha', 'namausaha', 'nama', 'nama_perusahaan', 'perusahaan', 'nama_principal', 'principal'])
         const namaDiPrelist = get(['nama_di_prelist', 'namadiprelist', 'nama_prelist', 'prelist']) || namaUsaha
         const kategori = get(['kategori', 'kategori_usaha', 'sektor', 'bidang_usaha'])
@@ -351,6 +354,10 @@ export async function POST(request: Request) {
         const nilaiTambah = get(['nilai_tambah', 'nilaitambah', 'ntb'])
         const omzet = get(['r27a_omzet', 'r27aomzet', 'omzet'])
         const biayaBeli = get(['r26c_biaya_pembelian', 'biaya_pembelian', 'biayabeli'])
+
+        if ((!aid || aid.trim() === '') && (namaUsaha && namaUsaha !== '-')) {
+          aid = `TBN-IMP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+        }
 
         return {
           aid,
@@ -370,6 +377,7 @@ export async function POST(request: Request) {
         }
       }
 
+      const errors: string[] = []
       const chunkSize = 20
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize)
@@ -388,6 +396,7 @@ export async function POST(request: Request) {
                 await pool.query(`
                   UPDATE kbli_checks
                   SET
+                    assignment_id = $1,
                     nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
                     nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
                     kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
@@ -419,6 +428,7 @@ export async function POST(request: Request) {
                 await pool.query(`
                   UPDATE negative_ntb_checks
                   SET
+                    assignment_id = $1,
                     nama_principal = COALESCE(NULLIF($2, '-'), nama_principal),
                     kategori = COALESCE(NULLIF($3, '-'), kategori),
                     kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
@@ -439,11 +449,24 @@ export async function POST(request: Request) {
               }
 
               importedCount++
-            } catch (err) {
+            } catch (err: any) {
               console.error(`Error importing row ${item.aid}:`, err)
+              errors.push(`${item.aid}: ${err?.message || 'Error simpan'}`)
             }
           })
         )
+      }
+
+      if (importedCount === 0) {
+        if (errors.length > 0) {
+          return NextResponse.json({
+            error: `Gagal menyimpan ke database: ${errors[0]}`
+          }, { status: 500 })
+        } else {
+          return NextResponse.json({
+            error: 'Tidak ditemukan baris data yang valid dalam CSV. Silakan gunakan template CSV resmi dengan tombol "Unduh Template CSV".'
+          }, { status: 400 })
+        }
       }
 
       await pool.query(`

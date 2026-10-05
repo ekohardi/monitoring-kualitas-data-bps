@@ -372,7 +372,10 @@ export async function POST(request: Request) {
           return ''
         }
 
-        const aid = get(['assignment_id', 'assignmentid', 'id_assignment', 'id', 'kode_assignment', 'assignment'])
+        let aid = get([
+          'assignment_id', 'assignmentid', 'id_assignment', 'kode_assignment', 'assignment',
+          'id', 'id_unit', 'kode_sampel', 'no_sampel', 'nobs', 'nus', 'kode', 'no', 'nomor'
+        ])
         const namaUsaha = get(['nama_usaha', 'namausaha', 'nama', 'nama_perusahaan', 'perusahaan', 'principal'])
         const namaDiPrelist = get(['nama_di_prelist', 'namadiprelist', 'nama_prelist', 'namaprelist', 'prelist']) || namaUsaha
         const kategori = get(['kategori', 'kategori_usaha', 'sektor', 'bidang_usaha'])
@@ -383,6 +386,11 @@ export async function POST(request: Request) {
         const keterangan = get(['keterangan', 'catatan', 'note', 'ket'])
         const perbaikanKbli = get(['perbaikan_kbli', 'perbaikankbli', 'revisi_kbli', 'kbli_perbaikan'])
         const status = get(['status', 'status_pengecekan', 'status_cek'])
+
+        // Fallback aid generator if empty but row has usaha/kbli
+        if ((!aid || aid.trim() === '') && (namaUsaha && namaUsaha !== '-')) {
+          aid = `TBN-IMP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+        }
 
         // Parse Level 3, Level 4, Level 6
         let level3Code = get(['level_3_full_code', 'level3fullcode', 'level_3_kode', 'level3kode'])
@@ -465,6 +473,8 @@ export async function POST(request: Request) {
         }
       }
 
+      const errors: string[] = []
+
       // Process in chunks of 20 for optimal concurrency
       const chunkSize = 20
       for (let i = 0; i < rows.length; i += chunkSize) {
@@ -500,6 +510,7 @@ export async function POST(request: Request) {
                 await pool.query(`
                   UPDATE kbli_checks
                   SET
+                    assignment_id = $1,
                     nama_usaha = COALESCE(NULLIF($2, '-'), nama_usaha),
                     nama_di_prelist = COALESCE(NULLIF($3, '-'), nama_di_prelist),
                     kbli_akhir = COALESCE(NULLIF($4, '-'), kbli_akhir),
@@ -592,11 +603,24 @@ export async function POST(request: Request) {
                 createdCount++
               }
               importedCount++
-            } catch (itemErr) {
+            } catch (itemErr: any) {
               console.error(`Error importing row ${item.aid}:`, itemErr)
+              errors.push(`${item.aid}: ${itemErr?.message || 'Error simpan'}`)
             }
           })
         )
+      }
+
+      if (importedCount === 0) {
+        if (errors.length > 0) {
+          return NextResponse.json({
+            error: `Gagal menyimpan ke database: ${errors[0]}`
+          }, { status: 500 })
+        } else {
+          return NextResponse.json({
+            error: 'Tidak ditemukan baris data yang valid dalam CSV. Silakan gunakan template CSV resmi dengan tombol "Unduh Template CSV".'
+          }, { status: 400 })
+        }
       }
 
       const byUser = (checkerName || 'Admin BPS').trim()
