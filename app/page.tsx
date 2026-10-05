@@ -520,10 +520,16 @@ type CrossCheckRecord = {
   id: string
   assignmentId: string
   namaUsaha: string
+  namaDiPrelist?: string
+  kategori?: string
+  kategori2025?: string
   kbliAkhir: string
+  kegUtama?: string
   linkFasih: string
   hasKbli: boolean
   hasNtb: boolean
+  keterangan?: string
+  perbaikanKbli?: string
   kbli: {
     id?: number | string
     assignmentId?: string
@@ -543,6 +549,8 @@ type CrossCheckRecord = {
     level6Name?: string
     index1?: string
     linkFasih?: string
+    keterangan?: string
+    perbaikanKbli?: string
     extraFields?: Record<string, any>
   } | null
   ntb: {
@@ -553,6 +561,8 @@ type CrossCheckRecord = {
     kbliAkhir?: string
     tahunOperasi?: number | string
     catatan?: string
+    keterangan?: string
+    perbaikanKbli?: string
     r27aOmzet?: string
     r26cBiayaPembelian?: string
     r26bBiayaProduksi?: string
@@ -598,26 +608,53 @@ function CrossTableDetail({
   onDownload: () => void
   onEdit?: () => void
 }) {
-  const kbliMatch = item.kbli && item.ntb ? item.kbli.kbliAkhir === item.ntb.kbliAkhir : null
+  const level3 = item.kbli?.level3FullCode && item.kbli?.level3Name
+    ? `${item.kbli.level3FullCode} - ${item.kbli.level3Name}`
+    : (item.kbli?.level3FullCode || item.kbli?.level3Name || '-')
+
+  const level4 = item.kbli?.level4FullCode && item.kbli?.level4Name
+    ? `${item.kbli.level4FullCode} - ${item.kbli.level4Name}`
+    : (item.kbli?.level4FullCode || item.kbli?.level4Name || '-')
+
+  const level6 = item.kbli?.level6FullCode && item.kbli?.level6Name
+    ? `${item.kbli.level6FullCode} - ${item.kbli.level6Name}`
+    : (item.kbli?.level6FullCode || item.kbli?.level6Name || item.ntb?.level6FullCode || '-')
+
+  const keterangan = item.kbli?.keterangan && item.kbli.keterangan !== '-'
+    ? item.kbli.keterangan
+    : (item.keterangan && item.keterangan !== '-'
+      ? item.keterangan
+      : (item.ntb?.catatan && item.ntb.catatan !== '-'
+        ? item.ntb.catatan
+        : (item.ntb?.keterangan || '-')))
+
+  const perbaikanKbli = item.kbli?.perbaikanKbli && item.kbli.perbaikanKbli !== '-'
+    ? item.kbli.perbaikanKbli
+    : (item.perbaikanKbli && item.perbaikanKbli !== '-'
+      ? item.perbaikanKbli
+      : (item.ntb?.perbaikanKbli || '-'))
+
+  const detailsList = [
+    { label: 'nama di prelist', value: item.kbli?.namaDiPrelist || item.namaDiPrelist || item.namaUsaha || '-', spanClass: '' },
+    { label: 'nama usaha', value: item.kbli?.namaUsaha || item.namaUsaha || item.ntb?.namaPrincipal || '-', spanClass: '' },
+    { label: 'kategori', value: item.kbli?.kategori || item.kategori || item.ntb?.kategori || '-', spanClass: '' },
+    { label: 'kategori 2025', value: item.kbli?.kategori2025 || item.kategori2025 || '-', spanClass: '' },
+    { label: 'kbli akhir', value: item.kbli?.kbliAkhir || item.kbliAkhir || item.ntb?.kbliAkhir || '-', spanClass: '' },
+    { label: 'kegiatan utama', value: item.kbli?.kegUtama || item.kegUtama || item.ntb?.catatan || '-', spanClass: 'span-3' },
+    { label: 'level 3 (kode & nama)', value: level3, spanClass: 'span-2' },
+    { label: 'level 4 (kode & nama)', value: level4, spanClass: 'span-2' },
+    { label: 'level 6 (kode & nama)', value: level6, spanClass: 'span-2' },
+    { label: 'keterangan', value: keterangan, spanClass: 'span-2' },
+    { label: 'perbaikan kbli', value: perbaikanKbli, spanClass: 'span-full accent' },
+  ]
+
   const fasihUrl = item.linkFasih && item.linkFasih !== '-' ? item.linkFasih : null
 
   return (
     <div className="cross-table-container">
       <div className="cross-table-topbar">
         <div className="cross-table-title">
-          <strong>Detail Cross Table: {item.assignmentId}</strong>
-          {item.hasKbli && item.hasNtb ? (
-            <span className="match-badge matched">Terhubung di Kedua Tabel</span>
-          ) : item.hasKbli ? (
-            <span className="match-badge single">Tercatat di KBLI Checks Saja</span>
-          ) : (
-            <span className="match-badge single">Tercatat di NTB Negatif Saja</span>
-          )}
-          {kbliMatch !== null && (
-            <span className={`match-badge ${kbliMatch ? 'matched' : 'mismatch'}`}>
-              {kbliMatch ? `KBLI Selaras (${item.kbli?.kbliAkhir})` : `KBLI Berbeda: ${item.kbli?.kbliAkhir || '-'} vs ${item.ntb?.kbliAkhir || '-'}`}
-            </span>
-          )}
+          <strong>Detail Assignment: {item.assignmentId}</strong>
         </div>
         <div className="cross-table-actions">
           {fasihUrl && (
@@ -630,213 +667,21 @@ function CrossTableDetail({
               <Pencil /> Edit Baris
             </button>
           )}
-          <button className="btn-download-row" onClick={onDownload} title="Unduh data baris ini dalam format CSV">
-            <Download /> Unduh Baris (CSV)
-          </button>
+          {onDownload && (
+            <button className="btn-download-row" onClick={onDownload} title="Unduh data baris ini dalam format CSV">
+              <Download /> Unduh Baris (CSV)
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="cross-compare-banner">
-        <div className="compare-item">
-          <span>Assignment ID:</span>
-          <strong>{item.assignmentId}</strong>
-        </div>
-        <div className="compare-item">
-          <span>Nama Usaha:</span>
-          <strong>{item.namaUsaha}</strong>
-        </div>
-        <div className="compare-item">
-          <span>KBLI Akhir (KBLI vs NTB):</span>
-          <strong>{item.kbli?.kbliAkhir || '-'} / {item.ntb?.kbliAkhir || '-'}</strong>
-        </div>
-        <div className="compare-item">
-          <span>Nilai Tambah:</span>
-          <strong style={{ color: (item.ntb?.nilaiTambah || '').includes('-') ? '#c43838' : '#19324d' }}>
-            {item.ntb?.nilaiTambah || '-'}
-          </strong>
-        </div>
-      </div>
-
-      <div className="cross-cards-grid">
-        {/* KBLI CHECKS CARD */}
-        <div className="cross-card">
-          <div className="cross-card-header">
-            <div className="cross-card-title">
-              <Database /> Data Tabel KBLI Checks (kbli_checks)
-            </div>
-            {item.hasKbli ? (
-              <span className="badge done">{item.kbli?.status || 'Tersedia'}</span>
-            ) : (
-              <span className="badge inactive">Tidak Ada Data</span>
-            )}
+      <div className="check-data-details-grid">
+        {detailsList.map(field => (
+          <div key={field.label} className={`check-detail-field ${field.spanClass || ''}`}>
+            <small>{field.label}</small>
+            <strong>{field.value}</strong>
           </div>
-          {item.hasKbli && item.kbli ? (
-            <div className="cross-fields-grid">
-              <div className="cross-field">
-                <small>assignment_id</small>
-                <strong>{item.kbli.assignmentId || item.assignmentId}</strong>
-              </div>
-              <div className="cross-field">
-                <small>status penugasan</small>
-                <strong>{item.kbli.assignmentStatusAlias || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>nama di prelist</small>
-                <strong>{item.kbli.namaDiPrelist || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>nama usaha</small>
-                <strong>{item.kbli.namaUsaha || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>kategori</small>
-                <strong>{item.kbli.kategori || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>kategori 2025</small>
-                <strong>{item.kbli.kategori2025 || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>kbli akhir</small>
-                <strong>{item.kbli.kbliAkhir || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>index1</small>
-                <strong>{item.kbli.index1 || '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>kegiatan utama</small>
-                <strong>{item.kbli.kegUtama || '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>level 3 (kode & nama)</small>
-                <strong>{item.kbli.level3FullCode ? `${item.kbli.level3FullCode} - ${item.kbli.level3Name}` : '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>level 4 (kode & nama)</small>
-                <strong>{item.kbli.level4FullCode ? `${item.kbli.level4FullCode} - ${item.kbli.level4Name}` : '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>level 6 (kode & nama)</small>
-                <strong>{item.kbli.level6FullCode ? `${item.kbli.level6FullCode} - ${item.kbli.level6Name}` : '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>link fasih</small>
-                <strong>{item.kbli.linkFasih || '-'}</strong>
-              </div>
-              {item.kbli.extraFields && Object.keys(item.kbli.extraFields).length > 0 && (
-                <div className="cross-field full">
-                  <small>kolom tambahan database (kbli)</small>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginTop: '6px' }}>
-                    {Object.entries(item.kbli.extraFields).map(([col, val]) => (
-                      <div key={col} style={{ background: '#f5f9fc', padding: '6px 8px', borderRadius: '5px', border: '1px solid #dce8f4' }}>
-                        <small style={{ color: '#748ca4', fontSize: '9px', display: 'block' }}>{col}</small>
-                        <strong style={{ fontSize: '11px', color: '#1a334d' }}>{String(val || '-')}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="cross-card-empty">Catatan tidak ditemukan di tabel kbli_checks untuk assignment ini.</div>
-          )}
-        </div>
-
-        {/* NEGATIVE NTB CHECKS CARD */}
-        <div className="cross-card">
-          <div className="cross-card-header">
-            <div className="cross-card-title">
-              <FileCheck2 /> Data Tabel NTB Negatif (negative_ntb_checks)
-            </div>
-            {item.hasNtb ? (
-              <span className="badge done">NTB: {item.ntb?.nilaiTambah || 'Tersedia'}</span>
-            ) : (
-              <span className="badge inactive">Tidak Ada Data</span>
-            )}
-          </div>
-          {item.hasNtb && item.ntb ? (
-            <div className="cross-fields-grid">
-              <div className="cross-field">
-                <small>assignment_id</small>
-                <strong>{item.ntb.assignmentId || item.assignmentId}</strong>
-              </div>
-              <div className="cross-field">
-                <small>nama principal</small>
-                <strong>{item.ntb.namaPrincipal || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>kategori</small>
-                <strong>{item.ntb.kategori || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>kbli akhir</small>
-                <strong>{item.ntb.kbliAkhir || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>tahun operasi</small>
-                <strong>{item.ntb.tahunOperasi || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>nilai tambah</small>
-                <strong style={{ color: (item.ntb?.nilaiTambah || '').includes('-') ? '#c43838' : '#19324d' }}>
-                  {item.ntb?.nilaiTambah || '-'}
-                </strong>
-              </div>
-              <div className="cross-field">
-                <small>r27a (omzet)</small>
-                <strong>{item.ntb.r27aOmzet || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>r26c (biaya pembelian)</small>
-                <strong>{item.ntb.r26cBiayaPembelian || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>r26b (biaya produksi)</small>
-                <strong>{item.ntb.r26bBiayaProduksi || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>r26d (biaya operasional)</small>
-                <strong>{item.ntb.r26dBiayaOperasional || '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>catatan</small>
-                <strong>{item.ntb.catatan || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>level 2 code</small>
-                <strong>{item.ntb.level2FullCode || '-'}</strong>
-              </div>
-              <div className="cross-field">
-                <small>level 6 code</small>
-                <strong>{item.ntb.level6FullCode || '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>source file & folder</small>
-                <strong>{item.ntb.sourceFile ? `${item.ntb.sourceFile} (${item.ntb.sourceFolder || '-'})` : '-'}</strong>
-              </div>
-              <div className="cross-field full">
-                <small>link fasih</small>
-                <strong>{item.ntb.linkFasih || '-'}</strong>
-              </div>
-              {item.ntb.extraFields && Object.keys(item.ntb.extraFields).length > 0 && (
-                <div className="cross-field full">
-                  <small>kolom tambahan database (ntb)</small>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginTop: '6px' }}>
-                    {Object.entries(item.ntb.extraFields).map(([col, val]) => (
-                      <div key={col} style={{ background: '#f5f9fc', padding: '6px 8px', borderRadius: '5px', border: '1px solid #dce8f4' }}>
-                        <small style={{ color: '#748ca4', fontSize: '9px', display: 'block' }}>{col}</small>
-                        <strong style={{ fontSize: '11px', color: '#1a334d' }}>{String(val || '-')}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="cross-card-empty">Catatan tidak ditemukan di tabel negative_ntb_checks untuk assignment ini.</div>
-          )}
-        </div>
+        ))}
       </div>
     </div>
   )
@@ -966,81 +811,124 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     if (tab === 'kbli') {
       const headers = [
         'assignment_id',
-        'nama_usaha_kbli',
-        'nama_principal_ntb',
-        'kbli_akhir_kbli',
-        'kbli_akhir_ntb',
-        'kategori_kbli',
-        'kategori_ntb',
-        'status_kbli',
-        'nilai_tambah_ntb',
-        'r27a_omzet',
-        'r26c_biaya_pembelian',
-        'r26b_biaya_produksi',
-        'r26d_biaya_operasional',
-        'catatan_ntb',
-        'level_3_name',
-        'level_6_name',
+        'nama_di_prelist',
+        'nama_usaha',
+        'kategori',
+        'kategori_2025',
+        'kbli_akhir',
+        'kegiatan_utama',
+        'level_3_kode_nama',
+        'level_4_kode_nama',
+        'level_6_kode_nama',
+        'keterangan',
+        'perbaikan_kbli',
         'link_fasih'
       ]
-      const exportRows = filteredCrossData.map(item => [
-        item.assignmentId,
-        item.kbli?.namaUsaha || '-',
-        item.ntb?.namaPrincipal || '-',
-        item.kbli?.kbliAkhir || '-',
-        item.ntb?.kbliAkhir || '-',
-        item.kbli?.kategori || '-',
-        item.ntb?.kategori || '-',
-        item.kbli?.status || '-',
-        item.ntb?.nilaiTambah || '-',
-        item.ntb?.r27aOmzet || '-',
-        item.ntb?.r26cBiayaPembelian || '-',
-        item.ntb?.r26bBiayaProduksi || '-',
-        item.ntb?.r26dBiayaOperasional || '-',
-        item.ntb?.catatan || '-',
-        item.kbli?.level3Name || '-',
-        item.kbli?.level6Name || '-',
-        item.linkFasih
-      ])
-      exportToCsv('cross_table_kbli_checks_negative_ntb.csv', headers, exportRows)
+      const exportRows = filteredCrossData.map(item => {
+        const level3 = item.kbli?.level3FullCode && item.kbli?.level3Name
+          ? `${item.kbli.level3FullCode} - ${item.kbli.level3Name}`
+          : (item.kbli?.level3FullCode || item.kbli?.level3Name || '-')
+
+        const level4 = item.kbli?.level4FullCode && item.kbli?.level4Name
+          ? `${item.kbli.level4FullCode} - ${item.kbli.level4Name}`
+          : (item.kbli?.level4FullCode || item.kbli?.level4Name || '-')
+
+        const level6 = item.kbli?.level6FullCode && item.kbli?.level6Name
+          ? `${item.kbli.level6FullCode} - ${item.kbli.level6Name}`
+          : (item.kbli?.level6FullCode || item.kbli?.level6Name || item.ntb?.level6FullCode || '-')
+
+        const keterangan = item.kbli?.keterangan && item.kbli.keterangan !== '-'
+          ? item.kbli.keterangan
+          : (item.keterangan && item.keterangan !== '-'
+            ? item.keterangan
+            : (item.ntb?.catatan && item.ntb.catatan !== '-'
+              ? item.ntb.catatan
+              : (item.ntb?.keterangan || '-')))
+
+        const perbaikanKbli = item.kbli?.perbaikanKbli && item.kbli.perbaikanKbli !== '-'
+          ? item.kbli.perbaikanKbli
+          : (item.perbaikanKbli && item.perbaikanKbli !== '-'
+            ? item.perbaikanKbli
+            : (item.ntb?.perbaikanKbli || '-'))
+
+        return [
+          item.assignmentId,
+          item.kbli?.namaDiPrelist || item.namaDiPrelist || item.namaUsaha || '-',
+          item.kbli?.namaUsaha || item.namaUsaha || item.ntb?.namaPrincipal || '-',
+          item.kbli?.kategori || item.kategori || item.ntb?.kategori || '-',
+          item.kbli?.kategori2025 || item.kategori2025 || '-',
+          item.kbli?.kbliAkhir || item.kbliAkhir || item.ntb?.kbliAkhir || '-',
+          item.kbli?.kegUtama || item.kegUtama || item.ntb?.catatan || '-',
+          level3,
+          level4,
+          level6,
+          keterangan,
+          perbaikanKbli,
+          item.linkFasih
+        ]
+      })
+      exportToCsv('check_data_kualitas.csv', headers, exportRows)
     } else {
       exportToCsv(`${tab}_data.csv`, columns, filteredRows)
     }
   }
 
   const downloadSingleRow = (item: CrossCheckRecord) => {
-    const headers = ['tabel', 'assignment_id', 'nama', 'kbli_akhir', 'kategori', 'keterangan_atau_catatan', 'nilai_tambah', 'omzet', 'biaya_beli', 'biaya_produksi', 'biaya_operasional', 'link_fasih']
+    const level3 = item.kbli?.level3FullCode && item.kbli?.level3Name
+      ? `${item.kbli.level3FullCode} - ${item.kbli.level3Name}`
+      : (item.kbli?.level3FullCode || item.kbli?.level3Name || '-')
+
+    const level4 = item.kbli?.level4FullCode && item.kbli?.level4Name
+      ? `${item.kbli.level4FullCode} - ${item.kbli.level4Name}`
+      : (item.kbli?.level4FullCode || item.kbli?.level4Name || '-')
+
+    const level6 = item.kbli?.level6FullCode && item.kbli?.level6Name
+      ? `${item.kbli.level6FullCode} - ${item.kbli.level6Name}`
+      : (item.kbli?.level6FullCode || item.kbli?.level6Name || item.ntb?.level6FullCode || '-')
+
+    const keterangan = item.kbli?.keterangan && item.kbli.keterangan !== '-'
+      ? item.kbli.keterangan
+      : (item.keterangan && item.keterangan !== '-'
+        ? item.keterangan
+        : (item.ntb?.catatan && item.ntb.catatan !== '-'
+          ? item.ntb.catatan
+          : (item.ntb?.keterangan || '-')))
+
+    const perbaikanKbli = item.kbli?.perbaikanKbli && item.kbli.perbaikanKbli !== '-'
+      ? item.kbli.perbaikanKbli
+      : (item.perbaikanKbli && item.perbaikanKbli !== '-'
+        ? item.perbaikanKbli
+        : (item.ntb?.perbaikanKbli || '-'))
+
+    const headers = [
+      'nama di prelist',
+      'nama usaha',
+      'kategori',
+      'kategori 2025',
+      'kbli akhir',
+      'kegiatan utama',
+      'level 3 (kode & nama)',
+      'level 4 (kode & nama)',
+      'level 6 (kode & nama)',
+      'keterangan',
+      'perbaikan kbli'
+    ]
     const exportRows = [
       [
-        'kbli_checks',
-        item.kbli?.assignmentId || item.assignmentId,
-        item.kbli?.namaUsaha || '-',
-        item.kbli?.kbliAkhir || '-',
-        item.kbli?.kategori || '-',
-        item.kbli?.kegUtama || '-',
-        '-',
-        '-',
-        '-',
-        '-',
-        '-',
-        item.kbli?.linkFasih || item.linkFasih
-      ],
-      [
-        'negative_ntb_checks',
-        item.ntb?.assignmentId || item.assignmentId,
-        item.ntb?.namaPrincipal || '-',
-        item.ntb?.kbliAkhir || '-',
-        item.ntb?.kategori || '-',
-        item.ntb?.catatan || '-',
-        item.ntb?.nilaiTambah || '-',
-        item.ntb?.r27aOmzet || '-',
-        item.ntb?.r26cBiayaPembelian || '-',
-        item.ntb?.r26bBiayaProduksi || '-',
-        item.ntb?.r26dBiayaOperasional || '-',
-        item.ntb?.linkFasih || item.linkFasih
+        item.kbli?.namaDiPrelist || item.namaDiPrelist || item.namaUsaha || '-',
+        item.kbli?.namaUsaha || item.namaUsaha || item.ntb?.namaPrincipal || '-',
+        item.kbli?.kategori || item.kategori || item.ntb?.kategori || '-',
+        item.kbli?.kategori2025 || item.kategori2025 || '-',
+        item.kbli?.kbliAkhir || item.kbliAkhir || item.ntb?.kbliAkhir || '-',
+        item.kbli?.kegUtama || item.kegUtama || item.ntb?.catatan || '-',
+        level3,
+        level4,
+        level6,
+        keterangan,
+        perbaikanKbli
       ]
     ]
-    exportToCsv(`cross_data_${item.assignmentId}.csv`, headers, exportRows)
+    exportToCsv(`check_data_${item.assignmentId}.csv`, headers, exportRows)
   }
 
   const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1053,19 +941,25 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       assignmentId: editItem.assignmentId,
       kbliData: {
         namaUsaha: formData.get('namaUsaha') as string,
+        namaDiPrelist: formData.get('namaDiPrelist') as string,
         kbliAkhir: formData.get('kbliAkhir') as string,
         kategori: formData.get('kategori') as string,
+        kategori2025: formData.get('kategori2025') as string,
         kegUtama: formData.get('kegUtama') as string,
         status: formData.get('status') as string,
         linkFasih: formData.get('linkFasih') as string,
+        keterangan: formData.get('keterangan') as string,
+        perbaikanKbli: formData.get('perbaikanKbli') as string,
       },
       ntbData: {
         namaPrincipal: formData.get('namaUsaha') as string,
+        namaDiPrelist: formData.get('namaDiPrelist') as string,
         kbliAkhir: formData.get('kbliAkhir') as string,
         kategori: formData.get('kategori') as string,
-        catatan: formData.get('catatan') as string,
-        nilaiTambah: formData.get('nilaiTambah') as string,
-        r27aOmzet: formData.get('r27aOmzet') as string,
+        kategori2025: formData.get('kategori2025') as string,
+        catatan: formData.get('keterangan') as string,
+        keterangan: formData.get('keterangan') as string,
+        perbaikanKbli: formData.get('perbaikanKbli') as string,
         linkFasih: formData.get('linkFasih') as string,
       }
     }
@@ -1537,22 +1431,25 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 </label>
               </div>
               <div className="form-grid">
+                <label>Nama di Prelist
+                  <input name="namaDiPrelist" defaultValue={editItem.kbli?.namaDiPrelist || editItem.namaDiPrelist || ''} />
+                </label>
                 <label>KBLI Akhir
                   <input name="kbliAkhir" defaultValue={editItem.kbliAkhir} />
                 </label>
+              </div>
+              <div className="form-grid">
                 <label>Kategori
-                  <input name="kategori" defaultValue={editItem.kbli?.kategori || editItem.ntb?.kategori || ''} />
+                  <input name="kategori" defaultValue={editItem.kbli?.kategori || editItem.kategori || editItem.ntb?.kategori || ''} />
+                </label>
+                <label>Kategori 2025
+                  <input name="kategori2025" defaultValue={editItem.kbli?.kategori2025 || editItem.kategori2025 || ''} />
                 </label>
               </div>
               <div className="form-grid">
-                <label>Nilai Tambah (NTB)
-                  <input name="nilaiTambah" defaultValue={editItem.ntb?.nilaiTambah || '0'} />
+                <label>Perbaikan KBLI
+                  <input name="perbaikanKbli" defaultValue={editItem.kbli?.perbaikanKbli || editItem.perbaikanKbli || ''} placeholder="Contoh: 47111" />
                 </label>
-                <label>R27A Omzet
-                  <input name="r27aOmzet" defaultValue={editItem.ntb?.r27aOmzet || '0'} />
-                </label>
-              </div>
-              <div className="form-grid">
                 <label>Status KBLI
                   <select name="status" defaultValue={editItem.kbli?.status || 'Belum Dicek'}>
                     <option value="Belum Dicek">Belum Dicek</option>
@@ -1560,15 +1457,15 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                     <option value="Selesai Dicek">Selesai Dicek</option>
                   </select>
                 </label>
-                <label>Link Fasih (URL)
-                  <input name="linkFasih" defaultValue={editItem.linkFasih} />
-                </label>
               </div>
-              <label>Kegiatan Utama (KBLI)
-                <input name="kegUtama" defaultValue={editItem.kbli?.kegUtama || ''} />
+              <label>Kegiatan Utama
+                <input name="kegUtama" defaultValue={editItem.kbli?.kegUtama || editItem.kegUtama || ''} />
               </label>
-              <label>Catatan Pemeriksaan (NTB)
-                <input name="catatan" defaultValue={editItem.ntb?.catatan || ''} />
+              <label>Keterangan
+                <input name="keterangan" defaultValue={editItem.kbli?.keterangan || editItem.keterangan || editItem.ntb?.catatan || ''} />
+              </label>
+              <label>Link Fasih (URL)
+                <input name="linkFasih" defaultValue={editItem.linkFasih} />
               </label>
               <div className="modal-actions">
                 <button type="button" className="outline" onClick={() => setEditItem(null)}>Batal</button>

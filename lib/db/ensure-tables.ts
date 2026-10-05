@@ -19,6 +19,8 @@ export const initialSeedKbli = [
     level_6_name: 'Perdagangan Eceran Berbagai Barang yang Utamanya Makanan di Toko',
     index1: 'Negatif',
     link_fasih: 'https://fasih.bps.go.id/survey/TBN-00124',
+    keterangan: 'Perlu konfirmasi omzet dan sinkronisasi data',
+    perbaikan_kbli: '47111',
   },
   {
     assignment_id: 'TBN-00125',
@@ -38,6 +40,8 @@ export const initialSeedKbli = [
     level_6_name: 'Reparasi Mesin dan Kendaraan Bermotor Roda Dua',
     index1: 'Positif',
     link_fasih: 'https://fasih.bps.go.id/survey/TBN-00125',
+    keterangan: 'KBLI sudah sesuai bengkel motor',
+    perbaikan_kbli: '45201',
   },
   {
     assignment_id: 'TBN-00126',
@@ -57,6 +61,8 @@ export const initialSeedKbli = [
     level_6_name: 'Minimarket dan Toko Kelontong Modern',
     index1: 'Positif',
     link_fasih: 'https://fasih.bps.go.id/survey/TBN-00126',
+    keterangan: 'Kelontong modern minimarket',
+    perbaikan_kbli: '47112',
   },
   {
     assignment_id: 'TBN-00127',
@@ -76,6 +82,8 @@ export const initialSeedKbli = [
     level_6_name: 'Industri Produk Roti dan Kue',
     index1: 'Positif',
     link_fasih: 'https://fasih.bps.go.id/survey/TBN-00127',
+    keterangan: 'Industri roti dan kue basah skala mikro',
+    perbaikan_kbli: '10710',
   },
   {
     assignment_id: 'TBN-00128',
@@ -95,6 +103,8 @@ export const initialSeedKbli = [
     level_6_name: 'Restoran dan Rumah Makan Tradisional Pesisir',
     index1: 'Negatif',
     link_fasih: 'https://fasih.bps.go.id/survey/TBN-00128',
+    keterangan: 'Perlu verifikasi pengeluaran bahan baku',
+    perbaikan_kbli: '56101',
   },
   {
     assignment_id: 'TBN-00129',
@@ -114,6 +124,8 @@ export const initialSeedKbli = [
     level_6_name: 'Industri Pertenunan Kain dan Batik Tradisional',
     index1: 'Positif',
     link_fasih: 'https://fasih.bps.go.id/survey/TBN-00129',
+    keterangan: 'Pengrajin tenun gedog dan batik tulis',
+    perbaikan_kbli: '13121',
   }
 ]
 
@@ -278,14 +290,26 @@ export async function ensureTables() {
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS assignment_id TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS link_fasih TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS nama_usaha TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS nama_di_prelist TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS kbli_akhir TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS kategori TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS kategori_2025 TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS keg_utama TEXT;
       ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS status TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS keterangan TEXT;
+      ALTER TABLE kbli_checks ADD COLUMN IF NOT EXISTS perbaikan_kbli TEXT;
 
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS assignment_id TEXT;
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS link_fasih TEXT;
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS nama_principal TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS nama_di_prelist TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS kategori TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS kategori_2025 TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS keg_utama TEXT;
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS nilai_tambah TEXT;
       ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS catatan TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS keterangan TEXT;
+      ALTER TABLE negative_ntb_checks ADD COLUMN IF NOT EXISTS perbaikan_kbli TEXT;
 
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
@@ -312,12 +336,14 @@ export async function ensureTables() {
           INSERT INTO kbli_checks (
             assignment_id, nama_usaha, nama_di_prelist, kbli_akhir, kategori, kategori_2025,
             keg_utama, status, assignment_status_alias, level_3_full_code, level_3_name,
-            level_4_full_code, level_4_name, level_6_full_code, level_6_name, index1, link_fasih
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+            level_4_full_code, level_4_name, level_6_full_code, level_6_name, index1, link_fasih,
+            keterangan, perbaikan_kbli
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         `, [
           k.assignment_id, k.nama_usaha, k.nama_di_prelist, k.kbli_akhir, k.kategori, k.kategori_2025,
           k.keg_utama, k.status, k.assignment_status_alias, k.level_3_full_code, k.level_3_name,
-          k.level_4_full_code, k.level_4_name, k.level_6_full_code, k.level_6_name, k.index1, k.link_fasih
+          k.level_4_full_code, k.level_4_name, k.level_6_full_code, k.level_6_name, k.index1, k.link_fasih,
+          k.keterangan || '-', k.perbaikan_kbli || '-'
         ]).catch(() => null)
       }
     }

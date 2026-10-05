@@ -227,6 +227,77 @@ button { cursor: pointer; }
   .cross-field small { color: #798ea4; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
   .cross-field strong { color: #1d334a; font-size: 11.5px; overflow-wrap: anywhere; }
   .cross-card-empty { padding: 24px 16px; text-align: center; color: #8c9eb2; font-size: 12px; font-style: italic; }
+  .check-data-details-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding: 16px;
+    background: white;
+    border-radius: 9px;
+    border: 1px solid #dce7f2;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+  @media (max-width: 1024px) {
+    .check-data-details-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 600px) {
+    .check-data-details-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .check-detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #f8fafc;
+    border: 1px solid #eef3f8;
+  }
+  .check-detail-field.span-2 {
+    grid-column: span 2;
+  }
+  .check-detail-field.span-3 {
+    grid-column: span 3;
+  }
+  .check-detail-field.span-full {
+    grid-column: 1 / -1;
+  }
+  .check-detail-field.accent {
+    background: #f0f7ff;
+    border-color: #d0e4fa;
+  }
+  .check-detail-field.accent strong {
+    color: #026aa7;
+  }
+  @media (max-width: 1024px) {
+    .check-detail-field.span-3 {
+      grid-column: span 2;
+    }
+  }
+  @media (max-width: 600px) {
+    .check-detail-field.span-2,
+    .check-detail-field.span-3,
+    .check-detail-field.span-full {
+      grid-column: span 1;
+    }
+  }
+  .check-detail-field small {
+    color: #798ea4;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .check-detail-field strong {
+    color: #1a334d;
+    font-size: 12.5px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+  }
   /* Mobile Sidebar Backdrop & Responsive Drawer */
   .sidebar-backdrop {
     display: none;

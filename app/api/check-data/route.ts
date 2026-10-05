@@ -91,23 +91,38 @@ function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
       }
     }
 
+    const keterangan = getVal(kbliRow, ['keterangan', 'catatan', 'note', 'ket']) ||
+                       getVal(ntbRow, ['catatan', 'keterangan', 'note']) || '-'
+    const perbaikanKbli = getVal(kbliRow, ['perbaikan_kbli', 'perbaikanKbli', 'kbli_perbaikan', 'kbli_revisi', 'revisi_kbli']) ||
+                          getVal(ntbRow, ['perbaikan_kbli', 'perbaikanKbli', 'kbli_perbaikan']) || '-'
+    const namaDiPrelist = getVal(kbliRow, ['nama_di_prelist', 'namaDiPrelist']) || namaUsaha
+    const kategori = getVal(kbliRow, ['kategori']) || getVal(ntbRow, ['kategori']) || '-'
+    const kategori2025 = getVal(kbliRow, ['kategori_2025', 'kategori2025']) || '-'
+    const kegUtama = getVal(kbliRow, ['keg_utama', 'kegUtama', 'kegiatan_utama']) || '-'
+
     result.push({
       id,
       assignmentId: id,
       namaUsaha,
+      namaDiPrelist,
+      kategori,
+      kategori2025,
       kbliAkhir,
+      kegUtama,
       linkFasih,
       hasKbli,
       hasNtb,
+      keterangan,
+      perbaikanKbli,
       kbli: hasKbli ? {
         id: kbliRow.id ?? '-',
         assignmentId: getVal(kbliRow, ['assignment_id', 'assignmentId']) || id,
         namaUsaha: getVal(kbliRow, ['nama_usaha', 'namaUsaha']) || namaUsaha,
-        namaDiPrelist: getVal(kbliRow, ['nama_di_prelist', 'namaDiPrelist']) || '-',
+        namaDiPrelist,
         kbliAkhir: getVal(kbliRow, ['kbli_akhir', 'kbliAkhir']) || kbliAkhir,
-        kategori: getVal(kbliRow, ['kategori']) || '-',
-        kategori2025: getVal(kbliRow, ['kategori_2025', 'kategori2025']) || '-',
-        kegUtama: getVal(kbliRow, ['keg_utama', 'kegUtama', 'kegiatan_utama']) || '-',
+        kategori,
+        kategori2025,
+        kegUtama,
         status: getVal(kbliRow, ['status']) || 'Belum Dicek',
         assignmentStatusAlias: getVal(kbliRow, ['assignment_status_alias', 'assignmentStatusAlias']) || 'Aktif',
         level3FullCode: getVal(kbliRow, ['level_3_full_code', 'level3FullCode']) || '-',
@@ -118,6 +133,8 @@ function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
         level6Name: getVal(kbliRow, ['level_6_name', 'level6Name']) || '-',
         index1: getVal(kbliRow, ['index1']) || '-',
         linkFasih: getVal(kbliRow, ['link_fasih', 'linkFasih']) || linkFasih,
+        keterangan,
+        perbaikanKbli,
         extraFields: kbliExtra,
       } : null,
       ntb: hasNtb ? {
@@ -127,7 +144,9 @@ function buildCrossRecords(kbliRows: any[], ntbRows: any[]) {
         kategori: getVal(ntbRow, ['kategori']) || '-',
         kbliAkhir: getVal(ntbRow, ['kbli_akhir', 'kbliAkhir']) || kbliAkhir,
         tahunOperasi: getVal(ntbRow, ['tahun_operasi', 'tahunOperasi']) || '-',
-        catatan: getVal(ntbRow, ['catatan', 'keterangan']) || '-',
+        catatan: getVal(ntbRow, ['catatan', 'keterangan']) || keterangan,
+        keterangan,
+        perbaikanKbli,
         r27aOmzet: getVal(ntbRow, ['r27a_omzet', 'r27aOmzet', 'omzet']) || '-',
         r26cBiayaPembelian: getVal(ntbRow, ['r26c_biaya_pembelian', 'r26cBiayaPembelian', 'biaya_pembelian']) || '-',
         r26bBiayaProduksi: getVal(ntbRow, ['r26b_biaya_produksi', 'r26bBiayaProduksi', 'biaya_produksi']) || '-',
@@ -259,20 +278,28 @@ export async function POST(request: Request) {
           UPDATE kbli_checks
           SET 
             nama_usaha = COALESCE($2, nama_usaha),
-            kbli_akhir = COALESCE($3, kbli_akhir),
-            kategori = COALESCE($4, kategori),
-            keg_utama = COALESCE($5, keg_utama),
-            status = COALESCE($6, status),
-            link_fasih = COALESCE($7, link_fasih)
+            nama_di_prelist = COALESCE($3, nama_di_prelist),
+            kbli_akhir = COALESCE($4, kbli_akhir),
+            kategori = COALESCE($5, kategori),
+            kategori_2025 = COALESCE($6, kategori_2025),
+            keg_utama = COALESCE($7, keg_utama),
+            status = COALESCE($8, status),
+            link_fasih = COALESCE($9, link_fasih),
+            keterangan = COALESCE($10, keterangan),
+            perbaikan_kbli = COALESCE($11, perbaikan_kbli)
           WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
         `, [
           assignmentId,
           kbliData.namaUsaha,
+          kbliData.namaDiPrelist,
           kbliData.kbliAkhir,
           kbliData.kategori,
+          kbliData.kategori2025,
           kbliData.kegUtama,
           kbliData.status,
-          kbliData.linkFasih
+          kbliData.linkFasih,
+          kbliData.keterangan,
+          kbliData.perbaikanKbli
         ])
       }
 
@@ -284,16 +311,19 @@ export async function POST(request: Request) {
             kbli_akhir = COALESCE($3, kbli_akhir),
             kategori = COALESCE($4, kategori),
             catatan = COALESCE($5, catatan),
-            nilai_tambah = COALESCE($6, nilai_tambah),
-            r27a_omzet = COALESCE($7, r27a_omzet),
-            link_fasih = COALESCE($8, link_fasih)
+            keterangan = COALESCE($5, keterangan),
+            perbaikan_kbli = COALESCE($6, perbaikan_kbli),
+            nilai_tambah = COALESCE($7, nilai_tambah),
+            r27a_omzet = COALESCE($8, r27a_omzet),
+            link_fasih = COALESCE($9, link_fasih)
           WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM($1))
         `, [
           assignmentId,
           ntbData.namaPrincipal,
           ntbData.kbliAkhir,
           ntbData.kategori,
-          ntbData.catatan,
+          ntbData.keterangan || ntbData.catatan,
+          ntbData.perbaikanKbli,
           ntbData.nilaiTambah,
           ntbData.r27aOmzet,
           ntbData.linkFasih
