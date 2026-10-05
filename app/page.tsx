@@ -16,33 +16,316 @@ const sampleNegative = [
   ['52','5260101003','TBN-00126','Toko Berkah','Perdagangan','47112','2024','Data lengkap','8600000','2100000','900000','1100000','4400000','Lihat','ntb_2025.csv','Tuban/02'],
 ]
 
-function Login({ onLogin }: { onLogin: () => void }) {
+function Login({ onLogin }: { onLogin: (user: any) => void }) {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  async function submit() {
+  const [loading, setLoading] = useState(false)
+
+  async function submit(e?: React.FormEvent) {
+    if (e) e.preventDefault()
+    if (!identifier.trim() || !password) {
+      setError('Email/username dan password wajib diisi.')
+      return
+    }
     setError('')
-    const lookup = await fetch(`/api/users/lookup?identifier=${encodeURIComponent(identifier)}`)
-    const account = await lookup.json()
-    if (!lookup.ok || !account.email) { setError('Username/email atau password tidak valid.'); return }
-    const result = await authClient.signIn.email({ email: account.email, password })
-    if (result.error) setError('Username/email atau password tidak valid.')
-    else onLogin()
+    setLoading(true)
+
+    try {
+      const lookup = await fetch(`/api/users/lookup?identifier=${encodeURIComponent(identifier.trim())}`)
+      const account = await lookup.json().catch(() => ({}))
+      if (!lookup.ok || !account.email) {
+        setError('Username/email atau password tidak valid.')
+        setLoading(false)
+        return
+      }
+
+      const result = await authClient.signIn.email({ email: account.email, password })
+      if (result.error) {
+        setError('Username/email atau password tidak valid.')
+        setLoading(false)
+      } else {
+        const loggedUser = {
+          ...account,
+          ...(result.data?.user || {}),
+          username: result.data?.user?.username || account.username || identifier.trim().replace(/@.*$/, ''),
+          name: result.data?.user?.name || account.name || account.username || identifier.trim(),
+          role: result.data?.user?.role || account.role || 'Petugas Lapangan',
+        }
+        onLogin(loggedUser)
+      }
+    } catch (err) {
+      console.error('Login error:', err)
+      setError('Terjadi kesalahan saat masuk. Coba lagi.')
+      setLoading(false)
+    }
   }
-  return <main className="login-shell"><div className="login-art"><div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}><img src="/icon.svg" alt="Logo BPS" style={{ width: 46, height: 46 }} /><div className="brand-mark">BPS</div></div><div><p className="eyebrow">SISTEM MONITORING</p><h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1><p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p></div><div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div></div><div className="login-card"><div className="mobile-brand">BPS TUBAN</div><p className="eyebrow blue">SELAMAT DATANG</p><h2>Masuk ke Dashboard</h2><p className="muted">Gunakan email atau username untuk melanjutkan.</p><label>Email atau username</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="admin atau nama@bps.go.id" /><label>Password</label><input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" />{error&&<p className="error-text">{error}</p>}<button className="primary full" onClick={submit}>Masuk <span>→</span></button></div></main>
+
+  return (
+    <main className="login-shell">
+      <div className="login-art">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <img src="/icon.svg" alt="Logo BPS" style={{ width: 46, height: 46 }} />
+          <div className="brand-mark">BPS</div>
+        </div>
+        <div>
+          <p className="eyebrow">SISTEM MONITORING</p>
+          <h1>Kualitas Data<br /><span>BPS Kabupaten Tuban</span></h1>
+          <p className="login-copy">Pantau, validasi, dan tingkatkan kualitas data statistik sektoral secara terintegrasi.</p>
+        </div>
+        <div className="login-foot">Badan Pusat Statistik Kabupaten Tuban<br />Data berkualitas untuk Tuban yang lebih baik.</div>
+      </div>
+      <div className="login-card">
+        <div className="mobile-brand">BPS TUBAN</div>
+        <p className="eyebrow blue">SELAMAT DATANG</p>
+        <h2>Masuk ke Dashboard</h2>
+        <p className="muted">Gunakan email atau username untuk melanjutkan.</p>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
+          <label>Email atau username</label>
+          <input
+            value={identifier}
+            onChange={e => setIdentifier(e.target.value)}
+            placeholder="admin atau nama@bps.go.id"
+            autoComplete="username"
+            disabled={loading}
+          />
+          <label>Password</label>
+          <input
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            type="password"
+            autoComplete="current-password"
+            disabled={loading}
+          />
+          {error && <p className="error-text">{error}</p>}
+          <button type="submit" className="primary full" disabled={loading}>
+            {loading ? 'Memproses...' : <>Masuk <span>→</span></>}
+          </button>
+        </form>
+      </div>
+    </main>
+  )
 }
 
 function App() {
-  const [loggedIn, setLoggedIn] = useState(false)
+  const { data: sessionData } = authClient.useSession()
+  const [localUser, setLocalUser] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('bps_user')
+        return saved ? JSON.parse(saved) : null
+      } catch {
+        return null
+      }
+    }
+    return null
+  })
+  const [manualLoggedIn, setManualLoggedIn] = useState(false)
   const [tab, setTab] = useState<Tab>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'Semua'|'Belum dicek'|'Selesai'>('Semua')
+
+  const currentUser = useMemo(() => {
+    const raw = sessionData?.user || localUser
+    if (!raw && !localUser) return null
+    const rawUsername = (sessionData?.user as any)?.username || (localUser as any)?.username || ''
+    const rawEmail = sessionData?.user?.email || localUser?.email || ''
+    const rawName = sessionData?.user?.name || localUser?.name || ''
+    const fallbackUsername = rawEmail ? rawEmail.split('@')[0] : (rawName || 'admin')
+    const username = rawUsername || fallbackUsername
+    const name = rawName || username
+    const role = (sessionData?.user as any)?.role || (localUser as any)?.role || 'Administrator'
+    const initials = (name || username || 'U')
+      .split(' ')
+      .filter(Boolean)
+      .map((p: string) => p[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'U'
+
+    return {
+      ...localUser,
+      ...sessionData?.user,
+      username,
+      name,
+      role,
+      initials,
+    }
+  }, [sessionData?.user, localUser])
+
+  const isLoggedIn = Boolean(currentUser || manualLoggedIn)
+
+  const handleLogout = async () => {
+    try {
+      await authClient.signOut()
+    } catch (err) {
+      console.error('Sign out error:', err)
+    }
+    setLocalUser(null)
+    setManualLoggedIn(false)
+    setProfileOpen(false)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('bps_user')
+      } catch {}
+    }
+  }
+
+  useEffect(() => {
+    if (!profileOpen) return
+    const handleClickOutside = () => setProfileOpen(false)
+    window.addEventListener('click', handleClickOutside)
+    return () => window.removeEventListener('click', handleClickOutside)
+  }, [profileOpen])
+
   const rows = useMemo(()=>tab === 'kbli' ? [] : sampleNegative, [tab])
-  if (!loggedIn) return <Login onLogin={()=>setLoggedIn(true)} />
+
+  if (!isLoggedIn) {
+    return (
+      <Login
+        onLogin={(user) => {
+          setLocalUser(user)
+          setManualLoggedIn(true)
+          if (typeof window !== 'undefined' && user) {
+            try {
+              localStorage.setItem('bps_user', JSON.stringify(user))
+            } catch {}
+          }
+        }}
+      />
+    )
+  }
+
   const nav = [{id:'dashboard',label:'Ringkasan',icon:LayoutDashboard},{id:'kbli',label:'Check Data',icon:Database},{id:'users',label:'Manajemen Pengguna',icon:Users}] as const
   const tableCols = tab === 'kbli' ? kbliColumns : negativeColumns
-  return <div className="app-shell">{mobileOpen && <div className="sidebar-backdrop" onClick={()=>setMobileOpen(false)} aria-label="Tutup menu navigasi" />}<aside className={mobileOpen?'sidebar open':'sidebar'}><div className="side-brand"><img src="/icon.svg" alt="Logo BPS" style={{ width: 34, height: 34, flexShrink: 0 }} /><div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div><button className="close-nav" onClick={()=>setMobileOpen(false)} aria-label="Tutup navigasi"><X /></button></div><div className="side-section">MENU UTAMA</div><nav>{nav.map(item=>{const Icon=item.icon; return <button key={item.id} className={tab===item.id?'nav-item active':'nav-item'} onClick={()=>{setTab(item.id);setMobileOpen(false)}}><Icon />{item.label}{item.id==='negative'&&<b>12</b>}</button>})}</nav><div className="sidebar-bottom"><button className="nav-item"><Settings /> Pengaturan</button><button className="nav-item logout" onClick={()=>setLoggedIn(false)}><LogOut /> Keluar</button></div></aside><div className="main-area"><header><button className="menu-btn" onClick={()=>setMobileOpen(true)} title="Buka menu navigasi" aria-label="Buka menu navigasi"><Menu /></button><div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div><div className="header-actions"><button className="icon-button"><Search /></button><div className="profile"><div className="avatar">AR</div><div><strong>Admin BPS</strong><span>Administrator</span></div><ChevronDown /></div></div></header><main className="content">{tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus}/>}</main></div></div>
+
+  return (
+    <div className="app-shell">
+      {mobileOpen && <div className="sidebar-backdrop" onClick={()=>setMobileOpen(false)} aria-label="Tutup menu navigasi" />}
+      <aside className={mobileOpen?'sidebar open':'sidebar'}>
+        <div className="side-brand">
+          <img src="/icon.svg" alt="Logo BPS" style={{ width: 34, height: 34, flexShrink: 0 }} />
+          <div><strong>Kualitas Data</strong><span>Kabupaten Tuban</span></div>
+          <button className="close-nav" onClick={()=>setMobileOpen(false)} aria-label="Tutup navigasi"><X /></button>
+        </div>
+        <div className="side-section">MENU UTAMA</div>
+        <nav>
+          {nav.map(item=>{
+            const Icon=item.icon;
+            return (
+              <button
+                key={item.id}
+                className={tab===item.id?'nav-item active':'nav-item'}
+                onClick={()=>{setTab(item.id);setMobileOpen(false)}}
+              >
+                <Icon />{item.label}{item.id==='negative'&&<b>12</b>}
+              </button>
+            )
+          })}
+        </nav>
+        <div className="sidebar-bottom">
+          <button className="nav-item"><Settings /> Pengaturan</button>
+          <button className="nav-item logout" onClick={handleLogout}><LogOut /> Keluar</button>
+        </div>
+      </aside>
+      <div className="main-area">
+        <header>
+          <button className="menu-btn" onClick={()=>setMobileOpen(true)} title="Buka menu navigasi" aria-label="Buka menu navigasi"><Menu /></button>
+          <div className="crumb">Monitoring <span>/</span> <strong>{nav.find(n=>n.id===tab)?.label}</strong></div>
+          <div className="header-actions">
+            <button className="icon-button" aria-label="Pencarian"><Search /></button>
+            <div className="profile-wrapper" style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+              <div
+                className="profile"
+                onClick={() => setProfileOpen(prev => !prev)}
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                title={`Login sebagai @${currentUser?.username || 'user'}`}
+              >
+                <div className="avatar">{currentUser?.initials || 'U'}</div>
+                <div>
+                  <strong>{currentUser?.username || currentUser?.name || 'admin'}</strong>
+                  <span>{currentUser?.role || 'Administrator'}</span>
+                </div>
+                <ChevronDown style={{ transform: profileOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </div>
+
+              {profileOpen && (
+                <div
+                  className="profile-dropdown"
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '46px',
+                    width: '230px',
+                    zIndex: 100,
+                    background: 'white',
+                    border: '1px solid #dbe6f0',
+                    borderRadius: '10px',
+                    boxShadow: '0 16px 36px #173b5b20',
+                    padding: '12px',
+                  }}
+                >
+                  <div style={{ paddingBottom: '10px', borderBottom: '1px solid #edf2f6', marginBottom: '8px' }}>
+                    <strong style={{ display: 'block', fontSize: '13px', color: 'var(--ink)' }}>
+                      {currentUser?.name || currentUser?.username}
+                    </strong>
+                    <span style={{ display: 'block', fontSize: '11px', color: '#8a9caf', marginTop: '2px' }}>
+                      @{currentUser?.username || 'user'}
+                    </span>
+                    {currentUser?.email && (
+                      <span style={{ display: 'block', fontSize: '11px', color: '#8a9caf', marginTop: '1px' }}>
+                        {currentUser.email}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        fontSize: '10px',
+                        background: '#e6f1fb',
+                        color: 'var(--blue)',
+                        padding: '3px 8px',
+                        borderRadius: '12px',
+                        marginTop: '6px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {currentUser?.role || 'Administrator'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      width: '100%',
+                      border: 0,
+                      background: 'transparent',
+                      color: '#b24d4d',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <LogOut style={{ width: 15, height: 15 }} /> Keluar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+        <main className="content">
+          {tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus} currentUser={currentUser}/>}
+        </main>
+      </div>
+    </div>
+  )
 }
 
 function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
@@ -559,7 +842,7 @@ function CrossTableDetail({
   )
 }
 
-function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,query:string,setQuery:(s:string)=>void,status:string,setStatus:(s:any)=>void,columns:string[],rows:string[][]}) {
+function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser}:{tab:Tab,query:string,setQuery:(s:string)=>void,status:string,setStatus:(s:any)=>void,columns:string[],rows:string[][],currentUser?:any}) {
   const [checks, setChecks] = useState<Record<string, CheckState>>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('monitoring_checks')
@@ -625,12 +908,13 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
 
   const updateCheck = (id:string, key:keyof Pick<CheckState,'kbli'|'ntb'|'kewajaran'>) => {
     setChecks(current => {
+      const checkerName = currentUser?.username || currentUser?.name || 'Admin BPS'
       const next = {
         ...current,
         [id]: {
           ...current[id],
           [key]: !current[id]?.[key],
-          checkedBy: 'Admin BPS',
+          checkedBy: checkerName,
           checkedAt: new Date().toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' })
         }
       }
@@ -1357,34 +1641,39 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows}:{tab:Tab,q
 }
 
 function UsersPage(){
-  type UserObj = { id: string; initials: string; name: string; email: string; role: string; status: string; bidang: string }
+  type UserObj = { id: string; initials: string; name: string; email: string; username?: string; role: string; status: string; bidang: string }
   const [users,setUsers]=useState<UserObj[]>([])
   const [query,setQuery]=useState(''); const [role,setRole]=useState('Semua peran'); const [modal,setModal]=useState(false); const [editing,setEditing]=useState<number|null>(null); const [menu,setMenu]=useState<number|null>(null)
-  const [form,setForm]=useState({name:'',email:'',username:'',password:'',bidang:'',role:'Petugas Lapangan',status:'Aktif'})
-  useEffect(()=>{fetch('/api/users').then(async response=>{if(!response.ok)throw new Error('Gagal memuat pengguna'); const data=await response.json(); setUsers(data.map((u:any)=>({
-    id: u.id,
-    initials: u.name.slice(0,2).toUpperCase(),
-    name: u.name,
-    email: u.email,
-    role: u.role,
-    status: u.status || 'Aktif',
-    bidang: u.bidang || 'Distribusi'
-  })))
-                                                          }).catch(()=>window.alert('Daftar pengguna gagal dimuat dari database.'))},[])
+  const [form,setForm]=useState({name:'',email:'',username:'',password:'',bidang:'Distribusi',role:'Petugas Lapangan',status:'Aktif'})
+  useEffect(()=>{
+    fetch('/api/users').then(async response=>{
+      if(!response.ok)throw new Error('Gagal memuat pengguna');
+      const data=await response.json();
+      setUsers(data.map((u:any)=>({
+        id: u.id,
+        initials: (u.name || u.username || 'U').slice(0,2).toUpperCase(),
+        name: u.name,
+        email: u.email,
+        username: u.username || u.email.split('@')[0],
+        role: u.role,
+        status: u.status || 'Aktif',
+        bidang: u.bidang || 'Distribusi'
+      })))
+    }).catch(()=>window.alert('Daftar pengguna gagal dimuat dari database.'))
+  },[])
 
-  const visible=users.filter(u=>(role==='Semua peran'||u.role===role)&&`${u.name} ${u.email} ${u.initials}`.toLowerCase().includes(query.toLowerCase()))
-  function openForm(index?:UserObj){
+  const visible=users.filter(u=>(role==='Semua peran'||u.role===role)&&`${u.name} ${u.email} ${u.username || ''} ${u.initials}`.toLowerCase().includes(query.toLowerCase()))
+  function openForm(index?:number){
     if(index===undefined){
       setEditing(null);
       setForm({name:'',email:'',username:'',password:'',bidang:'Distribusi',role:'Petugas Lapangan',status:'Aktif'})
     }else{
       setEditing(index);
       const u=users[index];
-      // Safely map object keys directly avoiding index mismatch bugs
       setForm({
         name:u.name,
         email:u.email,
-        username:'',
+        username:u.username||'',
         password:'',
         role:u.role,
         status:u.status,
@@ -1395,12 +1684,15 @@ function UsersPage(){
     setModal(true)
   }
   async function save(){
-    if(!form.name.trim()||!form.email.trim()||editing===null&&!form.password.trim())return;
+    if(!form.name.trim()||!form.email.trim()||(editing===null&&!form.password.trim()))return;
+    const finalUsername = form.username.trim() || form.email.split('@')[0];
+    const payload = { ...form, username: finalUsername };
     if(editing===null){
-      if(form.password.length<8){window.alert('Password minimal 8 karakter.');return} const response=await fetch('/api/users/create',{
+      if(form.password.length<8){window.alert('Password minimal 8 karakter.');return}
+      const response=await fetch('/api/users/create',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(form)
+        body:JSON.stringify(payload)
       });
       if(!response.ok){
         const result=await response.json().catch(()=>null);
@@ -1409,15 +1701,13 @@ function UsersPage(){
       }
       const created=await response.json();
       const initials=form.name.split(' ').map(v=>v[0]).join('').slice(0,2).toUpperCase();
-      //setUsers(current=>[...current,[initials,form.name,form.email,form.role,form.status,created.user?.id||created.id]])}
-    setUsers(current=>[...current,{id: created.user?.id||created.id, initials, name: form.name, email: form.email, role: form.role, status: form.status, bidang: form.bidang}])
-  }else{
-    // Add your update logic here if editing API is implemented
-  }
-setModal(false)
+      setUsers(current=>[...current,{id: created.user?.id||created.id, initials, name: form.name, email: form.email, username: finalUsername, role: form.role, status: form.status, bidang: form.bidang}])
+    }else{
+      // Add your update logic here if editing API is implemented
+    }
+    setModal(false)
   }
   function toggle(index:number){
-    //setUsers(users.map((u,i)=>i===index?[u[0],u[1],u[2],u[3],u[4]==='Aktif'?'Nonaktif':'Aktif',u[5],u[6]]:u));
     setUsers(users.map((u,i)=>i===index?{...u, status: u.status==='Aktif'?'Nonaktif':'Aktif'}:u));
     setMenu(null)
   }
@@ -1427,7 +1717,109 @@ setModal(false)
     setUsers(users.filter((_,i)=>i!==index));
     setMenu(null)
   }
-  return <><div className="page-heading"><div><p className="eyebrow blue">ADMINISTRASI</p><h1>Manajemen Pengguna</h1><p className="muted">Kelola akses, peran, dan pembagian tugas pengguna.</p></div><button className="primary" onClick={()=>openForm()}><Plus /> Tambah Pengguna</button></div><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Search /><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nama atau email..." /></div><select value={role} onChange={e=>setRole(e.target.value)}><option>Semua peran</option><option>Administrator</option><option>Petugas Kualitas</option><option>Reviewer</option></select></div><div className="users-list">{visible.map((x)=><div className="user-row" key={x.email}><div className="avatar">{x.initials}</div><div className="user-main"><strong>{x.name}</strong><span>{x.email}</span></div><span className="role">{x.role}</span><span className={x.status==='Aktif'?'badge done':'badge inactive'}>{x.status}</span><div className="user-actions"><button className="more" aria-label={`Aksi ${x.name}`} onClick={()=>setMenu(menu===users.indexOf(x)?null:users.indexOf(x))}><MoreHorizontal /></button>{menu===users.indexOf(x)&&<div className="user-menu"><button onClick={()=>openForm(users.indexOf(x))}><Pencil /> Edit pengguna</button><button onClick={()=>toggle(users.indexOf(x))}>{x.status==='Aktif'?<UserRoundX />:<UserRoundCheck />} {x.status==='Aktif'?'Nonaktifkan':'Aktifkan'}</button><button className="danger" onClick={()=>remove(users.indexOf(x))}><Trash2 /> Hapus pengguna</button></div>}</div></div>)}</div>{visible.length===0&&<p className="empty-users">Pengguna tidak ditemukan.</p>}<div className="table-footer"><span>Menampilkan {visible.length} dari {users.length} pengguna</span><span className="muted">Perubahan tersimpan ke daftar pengguna</span></div></section>{modal&&<div className="modal-backdrop" onClick={()=>setModal(false)}><div className="user-modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><p className="eyebrow blue">AKUN PENGGUNA</p><h2>{editing===null?'Tambah Pengguna':'Edit Pengguna'}</h2></div><button className="close-modal" onClick={()=>setModal(false)}><X /></button></div><label>Nama lengkap<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Contoh: Dwi Santoso" /></label><label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="nama@bps.go.id" /></label><label>Bidang<select value={form.bidang} onChange={e=>setForm({...form,bidang:e.target.value})}><option>Distribusi</option><option>Produksi</option><option>Sosial</option><option>Nerwilis</option><option>PLS</option><option>Umum</option></select></label><label>Password<input value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimal 8 karakter" type="password" minLength={8} required={editing===null} /></label><div className="form-grid"><label>Peran<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option>Administrator</option><option>Petugas Kualitas</option><option>Reviewer</option></select></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>Aktif</option><option>Nonaktif</option></select></label></div><div className="modal-actions"><button className="outline" onClick={()=>setModal(false)}>Batal</button><button className="primary" onClick={save}>Simpan Pengguna</button></div></div></div>}</>}
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow blue">ADMINISTRASI</p>
+          <h1>Manajemen Pengguna</h1>
+          <p className="muted">Kelola akses, peran, dan pembagian tugas pengguna.</p>
+        </div>
+        <button className="primary" onClick={()=>openForm()}><Plus /> Tambah Pengguna</button>
+      </div>
+      <section className="panel table-panel">
+        <div className="table-toolbar">
+          <div className="search-box">
+            <Search />
+            <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nama, username, atau email..." />
+          </div>
+          <select value={role} onChange={e=>setRole(e.target.value)}>
+            <option>Semua peran</option>
+            <option>Administrator</option>
+            <option>Petugas Kualitas</option>
+            <option>Reviewer</option>
+          </select>
+        </div>
+        <div className="users-list">
+          {visible.map((x)=>(
+            <div className="user-row" key={x.email}>
+              <div className="avatar">{x.initials}</div>
+              <div className="user-main">
+                <strong>{x.name}</strong>
+                <span>{x.email}{x.username ? ` • @${x.username}` : ''}</span>
+              </div>
+              <span className="role">{x.role}</span>
+              <span className={x.status==='Aktif'?'badge done':'badge inactive'}>{x.status}</span>
+              <div className="user-actions">
+                <button className="more" aria-label={`Aksi ${x.name}`} onClick={()=>setMenu(menu===users.indexOf(x)?null:users.indexOf(x))}>
+                  <MoreHorizontal />
+                </button>
+                {menu===users.indexOf(x)&&(
+                  <div className="user-menu">
+                    <button onClick={()=>openForm(users.indexOf(x))}><Pencil /> Edit pengguna</button>
+                    <button onClick={()=>toggle(users.indexOf(x))}>{x.status==='Aktif'?<UserRoundX />:<UserRoundCheck />} {x.status==='Aktif'?'Nonaktifkan':'Aktifkan'}</button>
+                    <button className="danger" onClick={()=>remove(users.indexOf(x))}><Trash2 /> Hapus pengguna</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {visible.length===0&&<p className="empty-users">Pengguna tidak ditemukan.</p>}
+        <div className="table-footer">
+          <span>Menampilkan {visible.length} dari {users.length} pengguna</span>
+          <span className="muted">Perubahan tersimpan ke daftar pengguna</span>
+        </div>
+      </section>
+      {modal&&(
+        <div className="modal-backdrop" onClick={()=>setModal(false)}>
+          <div className="user-modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow blue">AKUN PENGGUNA</p>
+                <h2>{editing===null?'Tambah Pengguna':'Edit Pengguna'}</h2>
+              </div>
+              <button className="close-modal" onClick={()=>setModal(false)}><X /></button>
+            </div>
+            <label>Nama lengkap<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Contoh: Dwi Santoso" /></label>
+            <label>Username<input value={form.username} onChange={e=>setForm({...form,username:e.target.value})} placeholder="Contoh: dwisantoso" /></label>
+            <label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="nama@bps.go.id" /></label>
+            <label>Bidang
+              <select value={form.bidang} onChange={e=>setForm({...form,bidang:e.target.value})}>
+                <option>Distribusi</option>
+                <option>Produksi</option>
+                <option>Sosial</option>
+                <option>Nerwilis</option>
+                <option>PLS</option>
+                <option>Umum</option>
+              </select>
+            </label>
+            <label>Password<input value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimal 8 karakter" type="password" minLength={8} required={editing===null} /></label>
+            <div className="form-grid">
+              <label>Peran
+                <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>
+                  <option>Administrator</option>
+                  <option>Petugas Kualitas</option>
+                  <option>Reviewer</option>
+                </select>
+              </label>
+              <label>Status
+                <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
+                  <option>Aktif</option>
+                  <option>Nonaktif</option>
+                </select>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="outline" onClick={()=>setModal(false)}>Batal</button>
+              <button className="primary" onClick={save}>Simpan Pengguna</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
 
 
 export default App
