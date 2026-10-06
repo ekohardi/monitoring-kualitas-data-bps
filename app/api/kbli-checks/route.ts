@@ -30,34 +30,50 @@ export async function GET() {
     if (process.env.DATABASE_URL) {
       await ensureTables()
 
-      const [kbliRes, checksRes] = await Promise.all([
-        pool.query(`SELECT * FROM kbli_checks ORDER BY id ASC LIMIT 2000`).catch(err => {
-          console.error('Failed to select from kbli_checks:', err)
-          return { rows: [] }
-        }),
-        pool.query(`SELECT * FROM assignment_checks`).catch(err => {
-          console.error('Failed to select from assignment_checks:', err)
-          return { rows: [] }
-        })
-      ])
+      const res = await pool.query(`
+        SELECT 
+          k.id,
+          k.assignment_id,
+          k.nama_usaha,
+          k.nama_di_prelist,
+          k.kategori,
+          k.kategori_2025,
+          k.kbli_akhir,
+          k.keg_utama,
+          k.level_3_full_code,
+          k.level_3_name,
+          k.level_4_full_code,
+          k.level_4_name,
+          k.level_6_full_code,
+          k.level_6_name,
+          k.assignment_status_alias,
+          k.status,
+          k.link_fasih,
+          k.keterangan,
+          k.perbaikan_kbli,
+          k.index1,
+          COALESCE(c.check_kbli, k.check_kbli, false) AS check_kbli,
+          COALESCE(c.check_ntb, k.check_ntb, false) AS check_ntb,
+          COALESCE(c.check_kewajaran, k.check_kewajaran, false) AS check_kewajaran,
+          COALESCE(NULLIF(c.checked_by, ''), k.checked_by, '') AS checked_by,
+          COALESCE(NULLIF(c.checked_at, ''), k.checked_at, '') AS checked_at
+        FROM kbli_checks k
+        LEFT JOIN assignment_checks c ON c.assignment_id = k.assignment_id
+        ORDER BY k.id ASC;
+      `).catch(err => {
+        console.error('Failed to select from kbli_checks with join:', err)
+        return { rows: [] }
+      })
 
-      const checksMap = new Map<string, any>()
-      for (const c of checksRes.rows) {
-        if (c.assignment_id) {
-          checksMap.set(c.assignment_id.trim().toLowerCase(), c)
-        }
-      }
-
-      if (kbliRes.rows.length > 0) {
-        const records = kbliRes.rows.map(row => {
+      if (res.rows.length > 0) {
+        const records = res.rows.map(row => {
           const aid = getVal(row, ['assignment_id', 'assignmentId', 'id']) || `TBN-${row.id}`
-          const checkDb = checksMap.get(aid.trim().toLowerCase())
 
-          const isKbli = Boolean(checkDb ? checkDb.check_kbli : row.check_kbli)
-          const isNtb = Boolean(checkDb ? checkDb.check_ntb : row.check_ntb)
-          const isKewajaran = Boolean(checkDb ? checkDb.check_kewajaran : row.check_kewajaran)
-          const checkedBy = (checkDb?.checked_by || row.checked_by || '').trim()
-          const checkedAt = (checkDb?.checked_at || row.checked_at || '').trim()
+          const isKbli = Boolean(row.check_kbli)
+          const isNtb = Boolean(row.check_ntb)
+          const isKewajaran = Boolean(row.check_kewajaran)
+          const checkedBy = (row.checked_by || '').trim()
+          const checkedAt = (row.checked_at || '').trim()
 
           let status = getVal(row, ['status']) || 'Belum Dicek'
           if (isKbli) {
@@ -65,7 +81,6 @@ export async function GET() {
           } else if (status === 'Selesai Dicek' && !isKbli) {
             status = 'Belum Dicek'
           }
-
 
           const namaUsaha = getVal(row, ['nama_usaha', 'namaUsaha', 'nama_di_prelist', 'nama']) || '-'
           const namaDiPrelist = getVal(row, ['nama_di_prelist', 'namaDiPrelist']) || namaUsaha
@@ -211,10 +226,18 @@ export async function POST(request: Request) {
     }
 
     // Determine fallback user_id from "user" table if needed
-    let fallbackUserId: string | null = (checkerUserId && String(checkerUserId).trim() !== '') ? String(checkerUserId).trim() : null
-    const uRes = await pool.query(`SELECT id FROM "user" ORDER BY "createdAt" ASC LIMIT 1`).catch(() => ({ rows: [] }))
-    if (!fallbackUserId && uRes.rows.length > 0 && uRes.rows[0]?.id) {
-      fallbackUserId = String(uRes.rows[0].id)
+    let fallbackUserId: string | null = null
+    if (checkerUserId && String(checkerUserId).trim() !== '') {
+      const uCheck = await pool.query(`SELECT id FROM "user" WHERE id = $1 LIMIT 1`, [String(checkerUserId).trim()]).catch(() => ({ rows: [] }))
+      if (uCheck.rows.length > 0) {
+        fallbackUserId = String(uCheck.rows[0].id)
+      }
+    }
+    if (!fallbackUserId) {
+      const uRes = await pool.query(`SELECT id FROM "user" ORDER BY "createdAt" ASC LIMIT 1`).catch(() => ({ rows: [] }))
+      if (uRes.rows.length > 0 && uRes.rows[0]?.id) {
+        fallbackUserId = String(uRes.rows[0].id)
+      }
     }
     if (!fallbackUserId) {
       const sysId = 'bps-admin-user'

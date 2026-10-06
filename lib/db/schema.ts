@@ -8,6 +8,7 @@ export const user = pgTable('user', {
   image: text('image'),
   username: text('username').unique(),
   role: text('role').notNull().default('Petugas Lapangan'),
+  bidang: text('bidang').default('Distribusi'),
   createdAt: timestamp('createdAt').notNull(),
   updatedAt: timestamp('updatedAt').notNull(),
 })
@@ -51,6 +52,7 @@ export const verification = pgTable('verification', {
 export const kbliChecks = pgTable('kbli_checks', {
   id: integer('id').primaryKey(),
   userId: text('user_id'),
+  assignmentId: text('assignment_id'),
   level3FullCode: text('level_3_full_code'),
   level3Name: text('level_3_name'),
   level4FullCode: text('level_4_full_code'),
@@ -67,20 +69,33 @@ export const kbliChecks = pgTable('kbli_checks', {
   kegUtama: text('keg_utama'),
   index1: text('index1'),
   linkFasih: text('link_fasih'),
-  assignmentId: text('assignment_id'),
+  keterangan: text('keterangan'),
+  perbaikanKbli: text('perbaikan_kbli'),
+  checkKbli: boolean('check_kbli').default(false),
+  checkNtb: boolean('check_ntb').default(false),
+  checkKewajaran: boolean('check_kewajaran').default(false),
+  checkedBy: text('checked_by'),
+  checkedAt: text('checked_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 })
 
 export const negativeNtbChecks = pgTable('negative_ntb_checks', {
   id: integer('id').primaryKey(),
   userId: text('user_id'),
+  assignmentId: text('assignment_id'),
   level2FullCode: text('level_2_full_code'),
   level6FullCode: text('level_6_full_code'),
-  assignmentId: text('assignment_id'),
   namaPrincipal: text('nama_principal'),
+  namaDiPrelist: text('nama_di_prelist'),
   kategori: text('kategori'),
+  kategori2025: text('kategori_2025'),
   kbliAkhir: text('kbli_akhir'),
+  kegUtama: text('keg_utama'),
   tahunOperasi: integer('tahun_operasi'),
   catatan: text('catatan'),
+  keterangan: text('keterangan'),
+  perbaikanKbli: text('perbaikan_kbli'),
   r27aOmzet: text('r27a_omzet'),
   r26cBiayaPembelian: text('r26c_biaya_pembelian'),
   r26bBiayaProduksi: text('r26b_biaya_produksi'),
@@ -89,7 +104,31 @@ export const negativeNtbChecks = pgTable('negative_ntb_checks', {
   linkFasih: text('link_fasih'),
   sourceFile: text('source_file'),
   sourceFolder: text('source_folder'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+})
+
+export const assignmentChecks = pgTable('assignment_checks', {
+  assignmentId: text('assignment_id').primaryKey(),
+  checkKbli: boolean('check_kbli').default(false),
+  checkNtb: boolean('check_ntb').default(false),
+  checkKewajaran: boolean('check_kewajaran').default(false),
+  checkedBy: text('checked_by'),
+  checkedAt: text('checked_at'),
+  updatedAt: timestamp('updated_at').defaultNow(),
+})
+
+export const activityLogs = pgTable('activity_logs', {
+  id: integer('id').primaryKey(),
+  userInitials: text('user_initials'),
+  userName: text('user_name'),
+  actionText: text('action_text'),
+  createdAt: timestamp('created_at').defaultNow(),
 })
 
 export const managedUser = user
 export type ManagedUser = typeof user.$inferSelect
+export type KbliCheck = typeof kbliChecks.$inferSelect
+export type NegativeNtbCheck = typeof negativeNtbChecks.$inferSelect
+export type AssignmentCheck = typeof assignmentChecks.$inferSelect
+export type ActivityLog = typeof activityLogs.$inferSelect

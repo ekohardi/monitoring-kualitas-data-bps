@@ -211,11 +211,11 @@ export async function GET() {
 
       // Fetch all rows from both tables and assignment_checks
       const [kbliRes, ntbRes, checksRes] = await Promise.all([
-        pool.query(`SELECT * FROM kbli_checks ORDER BY id ASC LIMIT 2000`).catch(err => {
+        pool.query(`SELECT * FROM kbli_checks ORDER BY id ASC`).catch(err => {
           console.error('Failed to select from kbli_checks:', err)
           return { rows: [] }
         }),
-        pool.query(`SELECT * FROM negative_ntb_checks ORDER BY id ASC LIMIT 2000`).catch(err => {
+        pool.query(`SELECT * FROM negative_ntb_checks ORDER BY id ASC`).catch(err => {
           console.error('Failed to select from negative_ntb_checks:', err)
           return { rows: [] }
         }),
@@ -273,10 +273,18 @@ export async function POST(request: Request) {
       await pool.query(`ALTER TABLE negative_ntb_checks ALTER COLUMN user_id DROP NOT NULL`).catch(() => null)
     }
 
-    let fallbackUserId: string | null = (checkerUserId && String(checkerUserId).trim() !== '') ? String(checkerUserId).trim() : null
-    const uRes = await pool.query(`SELECT id FROM "user" ORDER BY "createdAt" ASC LIMIT 1`).catch(() => ({ rows: [] }))
-    if (!fallbackUserId && uRes.rows.length > 0 && uRes.rows[0]?.id) {
-      fallbackUserId = String(uRes.rows[0].id)
+    let fallbackUserId: string | null = null
+    if (checkerUserId && String(checkerUserId).trim() !== '') {
+      const uCheck = await pool.query(`SELECT id FROM "user" WHERE id = $1 LIMIT 1`, [String(checkerUserId).trim()]).catch(() => ({ rows: [] }))
+      if (uCheck.rows.length > 0) {
+        fallbackUserId = String(uCheck.rows[0].id)
+      }
+    }
+    if (!fallbackUserId) {
+      const uRes = await pool.query(`SELECT id FROM "user" ORDER BY "createdAt" ASC LIMIT 1`).catch(() => ({ rows: [] }))
+      if (uRes.rows.length > 0 && uRes.rows[0]?.id) {
+        fallbackUserId = String(uRes.rows[0].id)
+      }
     }
     if (!fallbackUserId) {
       const sysId = 'bps-admin-user'

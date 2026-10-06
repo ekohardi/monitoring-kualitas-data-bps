@@ -351,6 +351,9 @@ export async function ensureTables() {
         END IF;
       END $$;
 
+      ALTER TABLE kbli_checks DROP CONSTRAINT IF EXISTS kbli_checks_user_id_fkey;
+      ALTER TABLE negative_ntb_checks DROP CONSTRAINT IF EXISTS negative_ntb_checks_user_id_fkey;
+
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
         user_initials TEXT,

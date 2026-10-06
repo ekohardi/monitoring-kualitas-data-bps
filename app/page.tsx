@@ -1,11 +1,11 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { AlertCircle, BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
 
-type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'kbli_check' | 'users'
+type Tab = 'dashboard' | 'stage3' | 'negative' | 'kbli' | 'kbli_check' | 'progress_check' | 'users'
 
 const negativeColumns = ['level_2_full_code','level_6_full_code','assignment_id','nama_principal','kategori','kbli_akhir','tahun_operasi','catatan','r27a_omzet','r26c_biaya_pembelian','r26b_biaya_produksi','r26d_biaya_operasional','nilai_tambah','link_fasih','source_file','source_folder']
 const kbliColumns = ['level_3_full_code','level_3_name','level_4_full_code','level_4_name','level_6_full_code','level_6_name','assignment_status_alias','nama_di_prelist','nama_usaha','kategori','kategori_2025','kbli_akhir','keg_utama','index1','link_fasih']
@@ -42,15 +42,16 @@ function Login({ onLogin }: { onLogin: (user: any) => void }) {
 
       const result = await authClient.signIn.email({ email: account.email, password })
       if (result.error) {
-        setError('Username/email atau password tidak valid.')
+        console.warn('Login error detail:', result.error)
+        setError(result.error.message || 'Username/email atau password tidak valid.')
         setLoading(false)
       } else {
         const loggedUser = {
           ...account,
           ...(result.data?.user || {}),
-          username: result.data?.user?.username || account.username || identifier.trim().replace(/@.*$/, ''),
+          username: (result.data?.user as any)?.username || account.username || identifier.trim().replace(/@.*$/, ''),
           name: result.data?.user?.name || account.name || account.username || identifier.trim(),
-          role: result.data?.user?.role || account.role || 'Petugas Lapangan',
+          role: (result.data?.user as any)?.role || account.role || 'Petugas Lapangan',
         }
         onLogin(loggedUser)
       }
@@ -110,23 +111,24 @@ function Login({ onLogin }: { onLogin: (user: any) => void }) {
 
 function App() {
   const { data: sessionData } = authClient.useSession()
-  const [localUser, setLocalUser] = useState<any>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('bps_user')
-        return saved ? JSON.parse(saved) : null
-      } catch {
-        return null
-      }
-    }
-    return null
-  })
+  const [localUser, setLocalUser] = useState<any>(null)
+  const [mounted, setMounted] = useState(false)
   const [manualLoggedIn, setManualLoggedIn] = useState(false)
   const [tab, setTab] = useState<Tab>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'Semua'|'Belum dicek'|'Selesai'>('Semua')
+
+  useEffect(() => {
+    setMounted(true)
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('bps_user')
+        if (saved) setLocalUser(JSON.parse(saved))
+      } catch {}
+    }
+  }, [])
 
   const currentUser = useMemo(() => {
     const raw = sessionData?.user || localUser
@@ -183,6 +185,14 @@ function App() {
 
   const rows = useMemo(()=>tab === 'kbli' ? [] : sampleNegative, [tab])
 
+  if (!mounted) {
+    return (
+      <main className="login-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#64748b', fontSize: '14px' }}>Memuat sistem...</div>
+      </main>
+    )
+  }
+
   if (!isLoggedIn) {
     return (
       <Login
@@ -202,6 +212,7 @@ function App() {
   const nav = [
     { id: 'dashboard', label: 'Ringkasan', icon: LayoutDashboard },
     { id: 'kbli_check', label: 'KBLI Check', icon: FileCheck2 },
+    { id: 'progress_check', label: 'Progress Check', icon: BarChart3 },
     { id: 'users', label: 'Manajemen Pengguna', icon: Users }
   ] as const
   const tableCols = (tab === 'kbli' || tab === 'kbli_check') ? kbliColumns : negativeColumns
@@ -225,7 +236,7 @@ function App() {
                 className={tab===item.id?'nav-item active':'nav-item'}
                 onClick={()=>{setTab(item.id);setMobileOpen(false)}}
               >
-                <Icon />{item.label}{item.id==='negative'&&<b>12</b>}
+                <Icon />{item.label}
               </button>
             )
           })}
@@ -325,7 +336,30 @@ function App() {
           </div>
         </header>
         <main className="content">
-          {tab==='dashboard'?<Dashboard setTab={setTab}/>:tab==='users'?<UsersPage/>:<TablePage tab={tab} columns={tableCols} rows={rows} query={query} setQuery={setQuery} status={status} setStatus={setStatus} currentUser={currentUser}/>}
+          {tab === 'dashboard' ? (
+            <Dashboard setTab={setTab} />
+          ) : tab === 'progress_check' ? (
+            <ProgressCheckPage
+              currentUser={currentUser}
+              onNavigateToKbliCheck={(officerFilter) => {
+                setTab('kbli_check')
+                setQuery(officerFilter)
+              }}
+            />
+          ) : tab === 'users' ? (
+            <UsersPage />
+          ) : (
+            <TablePage
+              tab={tab}
+              columns={tableCols}
+              rows={rows}
+              query={query}
+              setQuery={setQuery}
+              status={status}
+              setStatus={setStatus}
+              currentUser={currentUser}
+            />
+          )}
         </main>
       </div>
     </div>
@@ -530,8 +564,12 @@ type CrossCheckRecord = {
   kbliAkhir: string
   kegUtama?: string
   linkFasih: string
-  hasKbli: boolean
-  hasNtb: boolean
+  hasKbli?: boolean
+  hasNtb?: boolean
+  status?: string
+  check?: CheckState
+  level3FullCode?: string
+  level3Name?: string
   keterangan?: string
   perbaikanKbli?: string
   kbli: {
@@ -766,7 +804,7 @@ function CrossTableDetail({
   onEdit
 }: {
   item: CrossCheckRecord
-  onDownload: () => void
+  onDownload?: () => void
   onEdit?: () => void
 }) {
   const level3 = item.kbli?.level3FullCode && item.kbli?.level3Name
@@ -858,13 +896,15 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     }
     return combinedChecks
   })
+  const isLiveTab = tab === 'kbli' || tab === 'kbli_check'
   const [expandedRow, setExpandedRow] = useState<string|null>(null)
   const [crossData, setCrossData] = useState<CrossCheckRecord[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(isLiveTab)
   const [editItem, setEditItem] = useState<CrossCheckRecord|null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [selectedKategori, setSelectedKategori] = useState('Semua Kategori')
+  const [selectedLevel3, setSelectedLevel3] = useState('Semua Level 3')
   const [pageSize, setPageSize] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
 
@@ -893,7 +933,6 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const [importLoading, setImportLoading] = useState(false)
   const [importProgress, setImportProgress] = useState<ImportProgressState | null>(null)
 
-  const isLiveTab = tab === 'kbli' || tab === 'kbli_check'
   const title = tab === 'stage3'
     ? 'Pembagian Stage 3'
     : tab === 'negative'
@@ -903,34 +942,75 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     : 'Check Data'
 
   useEffect(() => {
+    setSelectedKategori('Semua Kategori')
+    setSelectedLevel3('Semua Level 3')
     setCurrentPage(1)
-  }, [query, status, selectedKategori, pageSize, tab])
+  }, [tab])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [query, status, selectedKategori, selectedLevel3, pageSize])
 
   const availableCategories = useMemo(() => {
     const set = new Set<string>()
     crossData.forEach(item => {
-      const k1 = item.kbli?.kategori?.trim()
-      const k2 = item.ntb?.kategori?.trim()
-      const k3 = item.kbli?.kategori2025?.trim()
+      const k1 = (item.kategori || item.kbli?.kategori || '').trim()
+      const k2 = (item.ntb?.kategori || '').trim()
       if (k1 && k1 !== '-') set.add(k1)
       if (k2 && k2 !== '-') set.add(k2)
-      if (k3 && k3 !== '-') set.add(k3)
     })
     return Array.from(set).sort()
   }, [crossData])
 
+  const availableLevel3Codes = useMemo(() => {
+    const set = new Set<string>()
+    crossData.forEach(item => {
+      const l3 = (item.level3FullCode || item.kbli?.level3FullCode || '').trim()
+      if (l3 && l3 !== '-' && l3 !== '') {
+        set.add(l3)
+      }
+    })
+    return Array.from(set).sort()
+  }, [crossData])
+
+  const fetchControllerRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (selectedKategori !== 'Semua Kategori' && availableCategories.length > 0 && !availableCategories.includes(selectedKategori)) {
+      setSelectedKategori('Semua Kategori')
+    }
+  }, [availableCategories, selectedKategori])
+
+  useEffect(() => {
+    if (selectedLevel3 !== 'Semua Level 3' && availableLevel3Codes.length > 0 && !availableLevel3Codes.includes(selectedLevel3)) {
+      setSelectedLevel3('Semua Level 3')
+    }
+  }, [availableLevel3Codes, selectedLevel3])
+
   const fetchData = (showLoading = false) => {
     if (showLoading) setLoading(true)
+
+    if (fetchControllerRef.current) {
+      try { fetchControllerRef.current.abort() } catch {}
+    }
+    const controller = new AbortController()
+    fetchControllerRef.current = controller
+
     const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
     fetch(`${endpoint}?_t=${Date.now()}`, {
+      signal: controller.signal,
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
       }
     })
-      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(async response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json()
+      })
       .then((items: CrossCheckRecord[]) => {
+        if (controller.signal.aborted) return
         setCrossData(items)
         const checksFromDb: Record<string, CheckState> = {}
         items.forEach(it => {
@@ -941,27 +1021,30 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         setChecks(prev => ({ ...prev, ...checksFromDb }))
       })
       .catch(err => {
-        if (showLoading) {
-          console.error('Failed to load data:', err)
-          setCrossData([])
-        }
+        if (err?.name === 'AbortError') return
+        console.error('Failed to load data:', err)
       })
       .finally(() => {
-        if (showLoading) setLoading(false)
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
       })
   }
 
   useEffect(() => {
-    if (!isLiveTab) return
+    if (!isLiveTab) {
+      setLoading(false)
+      return
+    }
 
     fetchData(true)
 
-    // Real-time polling every 4 seconds for multi-user live status
+    // Real-time polling every 30 seconds for multi-user live status (also syncs on tab focus)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchData(false)
       }
-    }, 4000)
+    }, 30000)
 
     const onFocus = () => {
       fetchData(false)
@@ -971,6 +1054,9 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     return () => {
       clearInterval(interval)
       window.removeEventListener('focus', onFocus)
+      if (fetchControllerRef.current) {
+        try { fetchControllerRef.current.abort() } catch {}
+      }
     }
   }, [tab])
 
@@ -1049,15 +1135,23 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
 
   const filteredCrossData = useMemo(() => {
     return crossData.filter(item => {
-      const matchQuery = `${item.assignmentId} ${item.namaUsaha} ${item.kbliAkhir} ${item.kbli?.kategori || ''} ${item.ntb?.catatan || ''}`.toLowerCase().includes(query.toLowerCase())
+      const l3 = item.level3FullCode || item.kbli?.level3FullCode || ''
+      const matchQuery = `${item.assignmentId} ${item.namaUsaha} ${item.kbliAkhir} ${item.kbli?.kategori || ''} ${l3} ${item.ntb?.catatan || ''}`.toLowerCase().includes(query.toLowerCase())
       if (!matchQuery) return false
 
       if (selectedKategori !== 'Semua Kategori') {
-        const catKbli = (item.kbli?.kategori || '').toLowerCase()
-        const catNtb = (item.ntb?.kategori || '').toLowerCase()
-        const cat2025 = (item.kbli?.kategori2025 || '').toLowerCase()
-        const target = selectedKategori.toLowerCase()
-        if (catKbli !== target && catNtb !== target && cat2025 !== target && !catKbli.includes(target) && !catNtb.includes(target)) {
+        const catKbli = (item.kategori || item.kbli?.kategori || '').trim().toLowerCase()
+        const catNtb = (item.ntb?.kategori || '').trim().toLowerCase()
+        const target = selectedKategori.trim().toLowerCase()
+        if (catKbli !== target && catNtb !== target) {
+          return false
+        }
+      }
+
+      if (selectedLevel3 !== 'Semua Level 3') {
+        const itemL3 = (item.level3FullCode || item.kbli?.level3FullCode || '').trim().toLowerCase()
+        const targetL3 = selectedLevel3.trim().toLowerCase()
+        if (itemL3 !== targetL3) {
           return false
         }
       }
@@ -1066,7 +1160,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       const complete = isComplete(item.assignmentId)
       return status === 'Selesai' ? complete : !complete
     })
-  }, [crossData, query, status, selectedKategori, checks])
+  }, [crossData, query, status, selectedKategori, selectedLevel3, checks])
 
   const filteredRows = useMemo(() => {
     return rows.filter(row => {
@@ -1521,14 +1615,26 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             </select>
           )}
           {isLiveTab && (
-            <div className="live-sync-indicator" title="Sinkronisasi otomatis dengan database PostgreSQL setiap 4 detik">
+            <select
+              value={selectedLevel3}
+              onChange={e => setSelectedLevel3(e.target.value)}
+              title="Filter berdasarkan Kecamatan"
+            >
+              <option value="Semua Level 3">Semua Kecamatan ({availableLevel3Codes.length})</option>
+              {availableLevel3Codes.map(code => (
+                <option key={code} value={code}>{code}</option>
+              ))}
+            </select>
+          )}
+          {isLiveTab && (
+            <div className="live-sync-indicator" title="Sinkronisasi otomatis dengan database PostgreSQL secara berkala">
               <span className="live-dot" />
               <span>Real-time Sync</span>
             </div>
           )}
           {isLiveTab && (
             <button className="outline" onClick={() => fetchData(true)} title="Segarkan data dari database">
-              <RotateCw className={loading ? 'rotated' : ''} /> Segarkan
+              <RotateCw className={loading ? 'spin-animation' : ''} /> Segarkan
             </button>
           )}
           {tab !== 'kbli_check' && (
@@ -1566,7 +1672,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         {/* PROGRESS BAR STICKY TOP BANNER WHEN MODAL IS CLOSED */}
         {importProgress && importProgress.active && !importPreview && (
           <div style={{ padding: '10px 18px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <RotateCw size={16} className={importProgress.isFinished ? '' : 'rotated'} style={{ color: importProgress.isFinished ? '#10b981' : '#2563eb', flexShrink: 0 }} />
+            <RotateCw size={16} className={importProgress.isFinished ? '' : 'spin-animation'} style={{ color: importProgress.isFinished ? '#10b981' : '#2563eb', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#1e3a8a', marginBottom: '5px' }}>
                 <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
@@ -1602,6 +1708,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 <th>assignment_id</th>
                 <th>Nama usaha</th>
                 <th>KBLI akhir</th>
+                {tab === 'kbli_check' && <th>Kecamatan</th>}
                 <th>Link Fasih</th>
                 <th>Pengecekan 1<br/><small>KBLI</small></th>
                 {tab !== 'kbli_check' && (
@@ -1618,12 +1725,42 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             <tbody>
               {loading && crossData.length === 0 ? (
                 <tr>
-                  <td colSpan={tab === 'kbli_check' ? 9 : 11} className="empty-users">Memuat data live dari database PostgreSQL...</td>
+                  <td colSpan={tab === 'kbli_check' ? 10 : 11} className="empty-users" style={{ padding: '42px 0' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                      <RotateCw className="spin-animation" style={{ width: 18, height: 18, color: 'var(--blue)' }} />
+                      <span style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                        Memuat data live dari database PostgreSQL
+                        <span className="animated-dots">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      </span>
+                    </div>
+                  </td>
                 </tr>
               ) : isLiveTab ? (
                 paginatedCrossData.length === 0 ? (
                   <tr>
-                    <td colSpan={tab === 'kbli_check' ? 9 : 11} className="empty-users">Data tidak ditemukan di database.</td>
+                    <td colSpan={tab === 'kbli_check' ? 10 : 11} className="empty-users" style={{ padding: '32px 0' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <span>Tidak ada data yang cocok dengan filter atau pencarian.</span>
+                        {(query || selectedKategori !== 'Semua Kategori' || selectedLevel3 !== 'Semua Level 3' || status !== 'Semua') && (
+                          <button
+                            className="outline"
+                            onClick={() => {
+                              setQuery('')
+                              setSelectedKategori('Semua Kategori')
+                              setSelectedLevel3('Semua Level 3')
+                              setStatus('Semua')
+                            }}
+                            style={{ fontSize: '12px', padding: '4px 12px', cursor: 'pointer' }}
+                          >
+                            Reset Filter & Pencarian
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ) : (
                   paginatedCrossData.map((item, rowIndex) => {
@@ -1649,6 +1786,23 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                           <td><strong>{id}</strong></td>
                           <td>{item.namaUsaha}</td>
                           <td>{item.kbliAkhir}</td>
+                          {tab === 'kbli_check' && (
+                            <td>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                background: '#f1f5f9',
+                                color: '#1e293b',
+                                fontSize: '11.5px',
+                                fontWeight: 500,
+                                border: '1px solid #e2e8f0',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {item.level3FullCode || item.kbli?.level3FullCode || '-'}
+                              </span>
+                            </td>
+                          )}
                           <td>
                             {item.linkFasih && item.linkFasih !== '-' ? (
                               <a
@@ -1689,7 +1843,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                         </tr>
                         {isExpanded && (
                           <tr className="details-row" key={`${rowKey}-details`}>
-                            <td colSpan={tab === 'kbli_check' ? 9 : 11}>
+                            <td colSpan={tab === 'kbli_check' ? 10 : 11}>
                               <CrossTableDetail
                                 item={item}
                                 onEdit={() => setEditItem(item)}
@@ -1739,7 +1893,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                             </a>
                           ) : '-'}
                         </td>
-                        {(tab === 'kbli_check' ? (['kbli'] as const) : (['kbli', 'ntb', 'kewajaran'] as const)).map(key => (
+                        {(['kbli', 'ntb', 'kewajaran'] as const).map(key => (
                           <td key={key}>
                             <label className="check-cell">
                               <input
@@ -1756,7 +1910,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                       </tr>
                       {isExpanded && (
                         <tr className="details-row" key={`${rowKey}-details`}>
-                          <td colSpan={tab === 'kbli_check' ? 8 : 10}>
+                          <td colSpan={10}>
                             <div className="details-grid">
                               {columns.map((column, colIdx) => (
                                 <div key={column}>
@@ -1804,6 +1958,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 <option value={10}>10</option>
                 <option value={25}>25</option>
                 <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
               <span style={{ fontSize: '11px', color: '#667d93' }}>per halaman</span>
             </div>
@@ -2086,7 +2241,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                       ) : importProgress.error ? (
                         <AlertCircle size={18} style={{ color: '#ef4444' }} />
                       ) : (
-                        <RotateCw size={18} className="rotated" style={{ color: '#2563eb' }} />
+                        <RotateCw size={18} className="spin-animation" style={{ color: '#2563eb' }} />
                       )}
                       <strong style={{ fontSize: '13px', color: importProgress.error ? '#b91c1c' : '#0f172a' }}>
                         {importProgress.isFinished
@@ -2177,7 +2332,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                     >
                       {importLoading ? (
                         <>
-                          <RotateCw size={14} className="rotated" />
+                          <RotateCw size={14} className="spin-animation" />
                           <span>Menyimpan ({importProgress?.percent || 0}%)...</span>
                         </>
                       ) : (
@@ -2190,6 +2345,552 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                   </>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+interface ProgressUser {
+  id: string
+  name: string
+  username: string
+  email: string
+  role: string
+  bidang: string
+  initials: string
+  target: number
+  assignedDirect: number
+  selesai: number
+  pending: number
+  percent: number
+  checkKbli: number
+  checkNtb: number
+  checkKewajaran: number
+  lastCheckedAt: string
+  statusPerformance: 'Selesai' | 'Sedang Berjalan' | 'Belum Mulai'
+}
+
+interface ProgressSummary {
+  totalAssignments: number
+  totalOfficers: number
+  activeOfficers: number
+  totalChecked: number
+  totalPending: number
+  unassignedCount: number
+  overallPercent: number
+  defaultQuota: number
+}
+
+interface KecamatanOption {
+  code: string
+  name: string
+  total: number
+}
+
+function ProgressCheckPage({
+  currentUser,
+  onNavigateToKbliCheck,
+}: {
+  currentUser?: any
+  onNavigateToKbliCheck: (officerFilter: string) => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [users, setUsers] = useState<ProgressUser[]>([])
+  const [summary, setSummary] = useState<ProgressSummary | null>(null)
+  const [kecamatanList, setKecamatanList] = useState<KecamatanOption[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [roleFilter, setRoleFilter] = useState('Semua Peran')
+  const [bidangFilter, setBidangFilter] = useState('Semua Bidang')
+  const [statusFilter, setStatusFilter] = useState('Semua Status')
+  const [allocateModal, setAllocateModal] = useState(false)
+  const [selectedTargetUser, setSelectedTargetUser] = useState<ProgressUser | null>(null)
+  const [allocateCount, setAllocateCount] = useState(500)
+  const [allocateKecamatan, setAllocateKecamatan] = useState('Semua')
+  const [submittingAllocate, setSubmittingAllocate] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const fetchData = async (isManual = false) => {
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/progress-check?_t=${Date.now()}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Gagal memuat data progress')
+      const data = await res.json()
+      if (data.ok) {
+        setUsers(data.users || [])
+        setSummary(data.summary || null)
+        setKecamatanList(data.kecamatanList || [])
+      }
+    } catch (err) {
+      console.error('Error loading progress check data:', err)
+      if (isManual) alert('Gagal memuat data progress check dari database.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 4000)
+  }
+
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const matchSearch = `${u.name} ${u.username} ${u.email} ${u.bidang} ${u.role}`.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchRole = roleFilter === 'Semua Peran' || u.role === roleFilter
+      const matchBidang = bidangFilter === 'Semua Bidang' || u.bidang === bidangFilter
+      const matchStatus = statusFilter === 'Semua Status' || u.statusPerformance === statusFilter
+      return matchSearch && matchRole && matchBidang && matchStatus
+    })
+  }, [users, searchQuery, roleFilter, bidangFilter, statusFilter])
+
+  const exportProgressCsv = () => {
+    const headers = [
+      'No',
+      'Nama Petugas',
+      'Username',
+      'Email',
+      'Role',
+      'Bidang',
+      'Target / Alokasi',
+      'Sudah Dicek',
+      'Belum Dicek',
+      'Persentase Selesai (%)',
+      'KBLI Selesai',
+      'NTB Selesai',
+      'Kewajaran Selesai',
+      'Terakhir Cek',
+      'Status Kinerja'
+    ]
+    const rows = filteredUsers.map((u, i) => [
+      i + 1,
+      `"${(u.name || '').replace(/"/g, '""')}"`,
+      `"${u.username || ''}"`,
+      `"${u.email || ''}"`,
+      `"${u.role || ''}"`,
+      `"${u.bidang || ''}"`,
+      u.target,
+      u.selesai,
+      u.pending,
+      `${u.percent}%`,
+      u.checkKbli,
+      u.checkNtb,
+      u.checkKewajaran,
+      `"${u.lastCheckedAt || '-'}"`,
+      `"${u.statusPerformance}"`
+    ])
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rekap_progress_check_bps_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleOpenAllocate = (user?: ProgressUser) => {
+    setSelectedTargetUser(user || users[0] || null)
+    setAllocateCount(500)
+    setAllocateKecamatan('Semua')
+    setAllocateModal(true)
+  }
+
+  const submitAllocate = async () => {
+    if (!selectedTargetUser) return
+    setSubmittingAllocate(true)
+    try {
+      const res = await fetch('/api/progress-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'allocate',
+          userId: selectedTargetUser.id,
+          count: allocateCount,
+          level3Code: allocateKecamatan,
+          adminName: currentUser?.name || currentUser?.username || 'Admin'
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setAllocateModal(false)
+        fetchData()
+        showToast(data.message || `Berhasil mengalokasikan tugas ke ${selectedTargetUser.name}`)
+      } else {
+        alert(data.error || 'Gagal mengalokasikan tugas')
+      }
+    } catch {
+      alert('Terjadi kesalahan koneksi saat mengalokasikan tugas')
+    } finally {
+      setSubmittingAllocate(false)
+    }
+  }
+
+  return (
+    <>
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          zIndex: 9999,
+          background: '#0f172a',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '13px',
+          fontWeight: 500,
+        }}>
+          <CheckCircle2 size={16} style={{ color: '#10b981' }} />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow blue">MONITORING & EVALUASI</p>
+          <h1>Progress Check</h1>
+          <p className="muted">Pantau progres dan performa pemeriksaan data kualitas per petugas BPS Kabupaten Tuban secara live.</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="outline" onClick={() => fetchData(true)} disabled={loading} title="Segarkan data progress dari PostgreSQL">
+            <RotateCw className={loading ? 'spin-animation' : ''} />
+            <span>Segarkan</span>
+          </button>
+          <button className="outline" onClick={exportProgressCsv} title="Unduh rekapitulasi ke format CSV">
+            <Download />
+            <span>Unduh Rekap</span>
+          </button>
+          <button className="primary" onClick={() => handleOpenAllocate()} title="Alokasikan data tugas ke petugas">
+            <UserRoundCheck />
+            <span>Alokasi Tugas</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '22px' }}>
+        <div className="stat stat-blue">
+          <div className="stat-icon"><Users /></div>
+          <div>
+            <p>Total Petugas BPS</p>
+            <h2>{summary?.totalOfficers || 0}</h2>
+            <span>{summary?.activeOfficers || 0} aktif memeriksa</span>
+          </div>
+        </div>
+        <div className="stat stat-blue">
+          <div className="stat-icon"><Database /></div>
+          <div>
+            <p>Total Tugas Assignment</p>
+            <h2>{(summary?.totalAssignments || 0).toLocaleString('id-ID')}</h2>
+            <em style={{ fontSize: '11px', color: '#64748b' }}>{(summary?.unassignedCount || 0).toLocaleString('id-ID')} belum dialokasikan</em>
+          </div>
+        </div>
+        <div className="stat stat-green">
+          <div className="stat-icon"><CheckCircle2 /></div>
+          <div>
+            <p>Sudah Selesai Dicek</p>
+            <h2>{(summary?.totalChecked || 0).toLocaleString('id-ID')}</h2>
+            <span>{(summary?.totalPending || 0).toLocaleString('id-ID')} data tersisa</span>
+          </div>
+        </div>
+        <div className="stat stat-orange">
+          <div className="stat-icon"><BarChart3 /></div>
+          <div>
+            <p>Progres Keseluruhan</p>
+            <h2>{summary?.overallPercent || 0}%</h2>
+            <span>Rata-rata target BPS</span>
+          </div>
+        </div>
+      </div>
+
+      <section className="panel table-panel">
+        <div className="table-toolbar" style={{ flexWrap: 'wrap' }}>
+          <div className="search-box">
+            <Search />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Cari nama petugas, username, bidang..."
+            />
+          </div>
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+            <option>Semua Peran</option>
+            <option>Administrator</option>
+            <option>Petugas Kualitas</option>
+            <option>Reviewer</option>
+          </select>
+          <select value={bidangFilter} onChange={e => setBidangFilter(e.target.value)}>
+            <option>Semua Bidang</option>
+            <option>Distribusi</option>
+            <option>Produksi</option>
+            <option>Sosial</option>
+            <option>Nerwilis</option>
+            <option>PLS</option>
+            <option>Umum</option>
+          </select>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option>Semua Status</option>
+            <option>Selesai</option>
+            <option>Sedang Berjalan</option>
+            <option>Belum Mulai</option>
+          </select>
+          {(searchQuery || roleFilter !== 'Semua Peran' || bidangFilter !== 'Semua Bidang' || statusFilter !== 'Semua Status') && (
+            <button
+              className="outline"
+              onClick={() => {
+                setSearchQuery('')
+                setRoleFilter('Semua Peran')
+                setBidangFilter('Semua Bidang')
+                setStatusFilter('Semua Status')
+              }}
+              style={{ padding: '0 10px', fontSize: '11px', cursor: 'pointer' }}
+            >
+              Reset Filter
+            </button>
+          )}
+        </div>
+
+        <div className="table-wrap">
+          <table style={{ width: '100%' }}>
+            <thead>
+              <tr>
+                <th style={{ width: 45, textAlign: 'center' }}>No</th>
+                <th>Petugas</th>
+                <th>Peran & Bidang</th>
+                <th>Target / Alokasi</th>
+                <th>Sudah Dicek</th>
+                <th>Belum Dicek</th>
+                <th style={{ minWidth: 160 }}>Progres (%)</th>
+                <th>Rincian Cek</th>
+                <th>Terakhir Cek</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'center' }}>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && users.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="empty-users" style={{ padding: '42px 0' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                      <RotateCw className="spin-animation" style={{ width: 18, height: 18, color: 'var(--blue)' }} />
+                      <span style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
+                        Memuat data progress check dari PostgreSQL
+                        <span className="animated-dots">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="empty-users" style={{ padding: '36px 0' }}>
+                    Tidak ada petugas yang cocok dengan filter atau pencarian.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((u, idx) => (
+                  <tr key={u.id}>
+                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#64748b' }}>{idx + 1}</td>
+                    <td>
+                      <div className="officer-cell">
+                        <div className="avatar soft">{u.initials}</div>
+                        <div className="officer-cell-info">
+                          <strong>{u.name}</strong>
+                          <span>@{u.username} • {u.email}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                        <span className="badge-tag" style={{ background: '#eff6ff', color: '#1e40af', borderColor: '#dbeafe' }}>
+                          {u.role}
+                        </span>
+                        <span className="badge-tag">
+                          {u.bidang}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <strong style={{ fontSize: '13px', color: '#1e293b' }}>
+                        {u.target.toLocaleString('id-ID')}
+                      </strong>
+                      <small style={{ display: 'block', fontSize: '10px', color: '#94a3b8' }}>
+                        {u.assignedDirect > 0 ? '(Penugasan Riil)' : '(Target Kuota)'}
+                      </small>
+                    </td>
+                    <td>
+                      <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#059669', fontSize: '13px' }}>
+                        <CheckCircle2 size={14} />
+                        {u.selesai.toLocaleString('id-ID')}
+                      </strong>
+                    </td>
+                    <td>
+                      <span style={{ color: u.pending > 0 ? '#d97706' : '#64748b', fontWeight: 600 }}>
+                        {u.pending.toLocaleString('id-ID')}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="progress-bar-cell">
+                        <div className="progress-bar-header">
+                          <span style={{ color: u.percent === 100 ? '#059669' : u.percent > 0 ? '#2563eb' : '#64748b' }}>
+                            {u.percent}%
+                          </span>
+                          <small style={{ color: '#94a3b8', fontWeight: 500 }}>
+                            {u.selesai}/{u.target}
+                          </small>
+                        </div>
+                        <div className="progress-bar-track">
+                          <div
+                            className={`progress-bar-fill ${u.percent === 100 ? 'done' : u.percent > 0 ? 'in-progress' : 'inactive'}`}
+                            style={{ width: `${Math.max(u.percent, u.selesai > 0 ? 5 : 0)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="tags-group">
+                        <span className="badge-tag" title="Pengecekan KBLI yang diselesaikan">
+                          KBLI: <strong>{u.checkKbli}</strong>
+                        </span>
+                        <span className="badge-tag" title="Pengecekan NTB Negatif yang diselesaikan">
+                          NTB: <strong>{u.checkNtb}</strong>
+                        </span>
+                        <span className="badge-tag" title="Pengecekan Kewajaran yang diselesaikan">
+                          Kewaj: <strong>{u.checkKewajaran}</strong>
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{ fontSize: '11px', color: '#64748b' }}>
+                      {u.lastCheckedAt}
+                    </td>
+                    <td>
+                      <span className={`badge ${u.statusPerformance === 'Selesai' ? 'done' : u.statusPerformance === 'Sedang Berjalan' ? 'in-progress' : 'inactive'}`}>
+                        {u.statusPerformance}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          className="btn-table-action"
+                          onClick={() => onNavigateToKbliCheck(u.username || u.name)}
+                          title={`Lihat data yang dicek oleh @${u.username} di tabel KBLI Check`}
+                        >
+                          <Eye /> Lihat Data
+                        </button>
+                        <button
+                          className="btn-table-action"
+                          onClick={() => handleOpenAllocate(u)}
+                          title={`Alokasikan data tugas ke ${u.name}`}
+                          style={{ borderColor: '#cbd5e1', color: '#475569' }}
+                        >
+                          <Plus /> Tugas
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="table-footer">
+          <span>Menampilkan {filteredUsers.length} dari {users.length} petugas</span>
+          <span className="muted">Sinkronisasi data riil dari tabel kbli_checks & assignment_checks</span>
+        </div>
+      </section>
+
+      {allocateModal && (
+        <div className="modal-backdrop" onClick={() => setAllocateModal(false)}>
+          <div className="user-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow blue">ALOKASI PENUGASAN</p>
+                <h2>Tugaskan Data ke Petugas</h2>
+              </div>
+              <button className="close-modal" onClick={() => setAllocateModal(false)}><X /></button>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569' }}>
+              Tersedia <strong>{(summary?.unassignedCount || 0).toLocaleString('id-ID')} data belum dialokasikan</strong> (berstatus SYSTEM) di database PostgreSQL yang siap dibagikan ke petugas.
+            </div>
+
+            <label>
+              Pilih Petugas Tujuan
+              <select
+                value={selectedTargetUser?.id || ''}
+                onChange={e => {
+                  const target = users.find(u => u.id === e.target.value) || null
+                  setSelectedTargetUser(target)
+                }}
+              >
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} (@{u.username}) — {u.bidang} ({u.role})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="form-grid">
+              <label>
+                Jumlah Data Tugas
+                <input
+                  type="number"
+                  min={1}
+                  max={summary?.unassignedCount || 10000}
+                  value={allocateCount}
+                  onChange={e => setAllocateCount(Math.max(1, parseInt(e.target.value || '1', 10)))}
+                  placeholder="Contoh: 500"
+                />
+              </label>
+
+              <label>
+                Kecamatan (Opsional)
+                <select
+                  value={allocateKecamatan}
+                  onChange={e => setAllocateKecamatan(e.target.value)}
+                >
+                  <option value="Semua">Semua Kecamatan</option>
+                  {kecamatanList.map(k => (
+                    <option key={k.code} value={k.code}>
+                      {k.code} - {k.name} ({k.total} data)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="modal-actions">
+              <button className="outline" onClick={() => setAllocateModal(false)} disabled={submittingAllocate}>
+                Batal
+              </button>
+              <button className="primary" onClick={submitAllocate} disabled={submittingAllocate || !selectedTargetUser}>
+                {submittingAllocate ? (
+                  <>
+                    <RotateCw className="spin-animation" style={{ width: 14, height: 14 }} />
+                    <span>Mengalokasikan...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserRoundCheck style={{ width: 14, height: 14 }} />
+                    <span>Tugaskan {allocateCount.toLocaleString('id-ID')} Data</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
