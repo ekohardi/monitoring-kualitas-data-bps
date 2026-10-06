@@ -123,7 +123,7 @@ Sesuaikan password dan port database lokal Anda di `.env.local`:
 ```env
 DATABASE_URL="postgresql://postgres:PASSWORD_POSTGRES_ANDA@localhost:5432/monitoring_kualitas_bps"
 BETTER_AUTH_SECRET="g89h4k2j5b8v9c2m1x4z7q0w3e6r9t2y5u8i1o4p7a0s3d6f"
-BETTER_AUTH_URL="http://localhost:3000"
+BETTER_AUTH_URL="http://localhost:3523"
 ```
 
 ---
@@ -196,4 +196,4 @@ Setelah migrasi sukses:
 npm run dev
 ```
 
-Buka browser di `http://localhost:3000`. Aplikasi kini langsung membaca dan menyimpan data secara persisten ke PostgreSQL lokal Anda.
+Buka browser di `http://localhost:3523`. Aplikasi kini langsung membaca dan menyimpan data secara persisten ke PostgreSQL lokal Anda.
