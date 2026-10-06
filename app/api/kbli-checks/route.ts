@@ -60,13 +60,12 @@ export async function GET() {
           const checkedAt = (checkDb?.checked_at || row.checked_at || '').trim()
 
           let status = getVal(row, ['status']) || 'Belum Dicek'
-          if (isKbli && isNtb && isKewajaran) {
+          if (isKbli) {
             status = 'Selesai Dicek'
-          } else if (isKbli || isNtb || isKewajaran) {
-            if (!status || status.toLowerCase().includes('belum')) {
-              status = 'Sedang Dicek'
-            }
+          } else if (status === 'Selesai Dicek' && !isKbli) {
+            status = 'Belum Dicek'
           }
+
 
           const namaUsaha = getVal(row, ['nama_usaha', 'namaUsaha', 'nama_di_prelist', 'nama']) || '-'
           const namaDiPrelist = getVal(row, ['nama_di_prelist', 'namaDiPrelist']) || namaUsaha
@@ -248,12 +247,8 @@ export async function POST(request: Request) {
       if (key === 'kewajaran') kewajaranVal = Boolean(value)
 
       // Calculate status
-      let newStatus = 'Belum Dicek'
-      if (kbliVal && ntbVal && kewajaranVal) {
-        newStatus = 'Selesai Dicek'
-      } else if (kbliVal || ntbVal || kewajaranVal) {
-        newStatus = 'Sedang Dicek'
-      }
+      let newStatus = kbliVal ? 'Selesai Dicek' : 'Belum Dicek'
+
 
       // Upsert into assignment_checks
       await pool.query(`
@@ -584,12 +579,10 @@ export async function POST(request: Request) {
                 const newAt = item.checkedAt || cur.checked_at || ''
 
                 let finalStatus = item.status && item.status !== 'Belum Dicek' ? item.status : cur.status
-                if (newKbli && newNtb && newWajar) {
+                if (newKbli) {
                   finalStatus = 'Selesai Dicek'
-                } else if (newKbli || newNtb || newWajar) {
-                  if (!finalStatus || finalStatus === 'Belum Dicek') {
-                    finalStatus = 'Sedang Dicek'
-                  }
+                } else if (finalStatus === 'Selesai Dicek' && !newKbli) {
+                  finalStatus = 'Belum Dicek'
                 }
 
                 if (hasUserIdCol) {
@@ -684,12 +677,8 @@ export async function POST(request: Request) {
                 const atTime = item.checkedAt || ''
 
                 let finalStatus = item.status || 'Belum Dicek'
-                if (isKbli && isNtb && isWajar) {
+                if (isKbli) {
                   finalStatus = 'Selesai Dicek'
-                } else if (isKbli || isNtb || isWajar) {
-                  if (!finalStatus || finalStatus === 'Belum Dicek') {
-                    finalStatus = 'Sedang Dicek'
-                  }
                 }
 
                 if (hasUserIdCol) {

@@ -201,7 +201,6 @@ function App() {
 
   const nav = [
     { id: 'dashboard', label: 'Ringkasan', icon: LayoutDashboard },
-    { id: 'kbli', label: 'Check Data', icon: Database },
     { id: 'kbli_check', label: 'KBLI Check', icon: FileCheck2 },
     { id: 'users', label: 'Manajemen Pengguna', icon: Users }
   ] as const
@@ -391,11 +390,8 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
             <RotateCw className={loading ? 'animate-spin' : ''} style={{ width: 14, height: 14 }} />
             <span>{loading ? 'Memuat...' : 'Refresh'}</span>
           </button>
-          <button className="outline" onClick={() => setTab('kbli_check')}>
+          <button className="primary" onClick={() => setTab('kbli_check')}>
             <FileCheck2 style={{ width: 15, height: 15 }} /> KBLI Check
-          </button>
-          <button className="primary" onClick={() => setTab('kbli')}>
-            <Database style={{ width: 15, height: 15 }} /> Check Data
           </button>
         </div>
       </div>
@@ -1000,7 +996,9 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       const itemKbli = key === 'kbli' ? newVal : Boolean(item.check?.kbli ?? checks[id]?.kbli)
       const itemNtb = key === 'ntb' ? newVal : Boolean(item.check?.ntb ?? checks[id]?.ntb)
       const itemWajar = key === 'kewajaran' ? newVal : Boolean(item.check?.kewajaran ?? checks[id]?.kewajaran)
-      const newStatus = (itemKbli && itemNtb && itemWajar) ? 'Selesai Dicek' : (itemKbli || itemNtb || itemWajar) ? 'Sedang Dicek' : 'Belum Dicek'
+      const newStatus = tab === 'kbli_check'
+        ? (itemKbli ? 'Selesai Dicek' : 'Belum Dicek')
+        : ((itemKbli && itemNtb && itemWajar) ? 'Selesai Dicek' : (itemKbli || itemNtb || itemWajar) ? 'Sedang Dicek' : 'Belum Dicek')
       return {
         ...item,
         status: newStatus,
@@ -1042,7 +1040,11 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
 
   const isComplete = (id:string) => {
     const c = checks[id]
-    return c ? (c.kbli && c.ntb && c.kewajaran) : false
+    if (!c) return false
+    if (tab === 'kbli_check') {
+      return Boolean(c.kbli)
+    }
+    return Boolean(c.kbli && c.ntb && c.kewajaran)
   }
 
   const filteredCrossData = useMemo(() => {
@@ -1529,9 +1531,11 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
               <RotateCw className={loading ? 'rotated' : ''} /> Segarkan
             </button>
           )}
-          <button className="outline" onClick={downloadAllData} title="Unduh data tabel dalam format CSV">
-            <Download /> Unduh Data ({activeCount})
-          </button>
+          {tab !== 'kbli_check' && (
+            <button className="outline" onClick={downloadAllData} title="Unduh data tabel dalam format CSV">
+              <Download /> Unduh Data ({activeCount})
+            </button>
+          )}
           {isLiveTab && (
             <>
               <input
@@ -1600,8 +1604,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 <th>KBLI akhir</th>
                 <th>Link Fasih</th>
                 <th>Pengecekan 1<br/><small>KBLI</small></th>
-                <th>Pengecekan 2<br/><small>NTB negatif</small></th>
-                <th>Pengecekan 3<br/><small>Kewajaran</small></th>
+                {tab !== 'kbli_check' && (
+                  <>
+                    <th>Pengecekan 2<br/><small>NTB negatif</small></th>
+                    <th>Pengecekan 3<br/><small>Kewajaran</small></th>
+                  </>
+                )}
                 <th>Dicek oleh</th>
                 <th>Tanggal cek</th>
                 <th>Status</th>
@@ -1610,12 +1618,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             <tbody>
               {loading && crossData.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="empty-users">Memuat data live dari database PostgreSQL...</td>
+                  <td colSpan={tab === 'kbli_check' ? 9 : 11} className="empty-users">Memuat data live dari database PostgreSQL...</td>
                 </tr>
               ) : isLiveTab ? (
                 paginatedCrossData.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="empty-users">Data tidak ditemukan di database.</td>
+                    <td colSpan={tab === 'kbli_check' ? 9 : 11} className="empty-users">Data tidak ditemukan di database.</td>
                   </tr>
                 ) : (
                   paginatedCrossData.map((item, rowIndex) => {
@@ -1655,7 +1663,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                               </a>
                             ) : '-'}
                           </td>
-                          {(['kbli', 'ntb', 'kewajaran'] as const).map(key => (
+                          {(tab === 'kbli_check' ? (['kbli'] as const) : (['kbli', 'ntb', 'kewajaran'] as const)).map(key => (
                             <td key={key}>
                               <label className="check-cell">
                                 <input
@@ -1681,11 +1689,11 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                         </tr>
                         {isExpanded && (
                           <tr className="details-row" key={`${rowKey}-details`}>
-                            <td colSpan={11}>
+                            <td colSpan={tab === 'kbli_check' ? 9 : 11}>
                               <CrossTableDetail
                                 item={item}
                                 onEdit={() => setEditItem(item)}
-                                onDownload={() => downloadSingleRow(item)}
+                                onDownload={tab === 'kbli_check' ? undefined : () => downloadSingleRow(item)}
                               />
                             </td>
                           </tr>
@@ -1731,7 +1739,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                             </a>
                           ) : '-'}
                         </td>
-                        {(['kbli', 'ntb', 'kewajaran'] as const).map(key => (
+                        {(tab === 'kbli_check' ? (['kbli'] as const) : (['kbli', 'ntb', 'kewajaran'] as const)).map(key => (
                           <td key={key}>
                             <label className="check-cell">
                               <input
@@ -1748,7 +1756,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                       </tr>
                       {isExpanded && (
                         <tr className="details-row" key={`${rowKey}-details`}>
-                          <td colSpan={10}>
+                          <td colSpan={tab === 'kbli_check' ? 8 : 10}>
                             <div className="details-grid">
                               {columns.map((column, colIdx) => (
                                 <div key={column}>
