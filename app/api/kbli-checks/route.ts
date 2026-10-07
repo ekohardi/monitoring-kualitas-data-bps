@@ -27,10 +27,9 @@ export async function GET() {
   }
 
   try {
-    if (process.env.DATABASE_URL) {
-      await ensureTables()
+    await ensureTables().catch(() => null)
 
-      const res = await pool.query(`
+    const res = await pool.query(`
         SELECT 
           k.id,
           k.assignment_id,
@@ -150,7 +149,6 @@ export async function GET() {
 
         return NextResponse.json(records, { headers })
       }
-    }
   } catch (error) {
     console.error('Error fetching kbli checks:', error)
   }
@@ -205,11 +203,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.DATABASE_URL) {
-      return NextResponse.json({ error: 'Database tidak terkonfigurasi' }, { status: 500 })
-    }
-
-    await ensureTables()
+    await ensureTables().catch(() => null)
     const body = await request.json()
     const { action, assignmentId, key, value, checkerName, checkerUserId, kbliData, rows } = body
 

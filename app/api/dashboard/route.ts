@@ -41,9 +41,8 @@ export async function GET() {
   }
 
   try {
-    if (process.env.DATABASE_URL) {
-      // 1. Ensure database tables and columns exist
-      await ensureTables()
+    // 1. Ensure database tables and columns exist
+    await ensureTables().catch(() => null)
 
       // 2. Real distinct assignments across kbli_checks & negative_ntb_checks
       const totalRes = await pool.query(`
@@ -216,7 +215,6 @@ export async function GET() {
         stageOfficers,
         activities: finalActivities
       }, { headers })
-    }
   } catch (err) {
     console.error('Error in GET /api/dashboard:', err)
   }

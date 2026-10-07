@@ -242,8 +242,6 @@ export const initialSeedNtb = [
 
 // Ensures PostgreSQL tables, columns, and seed exist in database
 export async function ensureTables() {
-  if (!process.env.DATABASE_URL) return
-
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS kbli_checks (

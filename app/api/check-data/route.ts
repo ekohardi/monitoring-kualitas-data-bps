@@ -206,29 +206,27 @@ export async function GET() {
   }
 
   try {
-    if (process.env.DATABASE_URL) {
-      await ensureTables()
+    await ensureTables().catch(() => null)
 
-      // Fetch all rows from both tables and assignment_checks
-      const [kbliRes, ntbRes, checksRes] = await Promise.all([
-        pool.query(`SELECT * FROM kbli_checks ORDER BY id ASC`).catch(err => {
-          console.error('Failed to select from kbli_checks:', err)
-          return { rows: [] }
-        }),
-        pool.query(`SELECT * FROM negative_ntb_checks ORDER BY id ASC`).catch(err => {
-          console.error('Failed to select from negative_ntb_checks:', err)
-          return { rows: [] }
-        }),
-        pool.query(`SELECT * FROM assignment_checks`).catch(err => {
-          console.error('Failed to select from assignment_checks:', err)
-          return { rows: [] }
-        })
-      ])
+    // Fetch all rows from both tables and assignment_checks
+    const [kbliRes, ntbRes, checksRes] = await Promise.all([
+      pool.query(`SELECT * FROM kbli_checks ORDER BY id ASC`).catch(err => {
+        console.error('Failed to select from kbli_checks:', err)
+        return { rows: [] }
+      }),
+      pool.query(`SELECT * FROM negative_ntb_checks ORDER BY id ASC`).catch(err => {
+        console.error('Failed to select from negative_ntb_checks:', err)
+        return { rows: [] }
+      }),
+      pool.query(`SELECT * FROM assignment_checks`).catch(err => {
+        console.error('Failed to select from assignment_checks:', err)
+        return { rows: [] }
+      })
+    ])
 
-      if (kbliRes.rows.length > 0 || ntbRes.rows.length > 0) {
-        const records = buildCrossRecords(kbliRes.rows, ntbRes.rows, checksRes.rows)
-        return NextResponse.json(records, { headers })
-      }
+    if (kbliRes.rows.length > 0 || ntbRes.rows.length > 0) {
+      const records = buildCrossRecords(kbliRes.rows, ntbRes.rows, checksRes.rows)
+      return NextResponse.json(records, { headers })
     }
   } catch (error) {
     console.error('Error fetching dynamic cross-table from database:', error)
@@ -242,11 +240,7 @@ export async function GET() {
 // Endpoint to update or add assignment data in the database
 export async function POST(request: Request) {
   try {
-    if (!process.env.DATABASE_URL) {
-      return NextResponse.json({ error: 'Database tidak terkonfigurasi' }, { status: 500 })
-    }
-
-    await ensureTables()
+    await ensureTables().catch(() => null)
     const body = await request.json()
     const { action, assignmentId, key, value, checkerName, checkerUserId, kbliData, ntbData, rows } = body
 
