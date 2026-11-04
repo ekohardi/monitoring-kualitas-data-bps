@@ -5,6 +5,7 @@ const isV0 = Boolean(process.env.V0_RUNTIME_URL || process.env.V0_DEV_APP_URL ||
 
 const origins = [
   'http://localhost:*',
+  'https://kualitasse.bpstuban.my.id',
   'http://127.0.0.1:*',
   'http://10.*:*',
   'http://192.168.*:*',

@@ -111,8 +111,15 @@ function Login({ onLogin }: { onLogin: (user: any) => void }) {
 
 function App() {
   const { data: sessionData } = authClient.useSession()
-  const [localUser, setLocalUser] = useState<any>(null)
-  const [mounted, setMounted] = useState(false)
+  const [localUser, setLocalUser] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('bps_user')
+        if (saved) return JSON.parse(saved)
+      } catch {}
+    }
+    return null
+  })
   const [manualLoggedIn, setManualLoggedIn] = useState(false)
   const [tab, setTab] = useState<Tab>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -121,14 +128,13 @@ function App() {
   const [status, setStatus] = useState<'Semua'|'Belum dicek'|'Selesai'>('Semua')
 
   useEffect(() => {
-    setMounted(true)
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('bps_user')
-        if (saved) setLocalUser(JSON.parse(saved))
+        if (saved && !localUser) setLocalUser(JSON.parse(saved))
       } catch {}
     }
-  }, [])
+  }, [localUser])
 
   const currentUser = useMemo(() => {
     const raw = sessionData?.user || localUser
@@ -184,14 +190,6 @@ function App() {
   }, [profileOpen])
 
   const rows = useMemo(()=>tab === 'kbli' ? [] : sampleNegative, [tab])
-
-  if (!mounted) {
-    return (
-      <main className="login-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: '#64748b', fontSize: '14px' }}>Memuat sistem...</div>
-      </main>
-    )
-  }
 
   if (!isLoggedIn) {
     return (
@@ -905,6 +903,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const [formLoading, setFormLoading] = useState(false)
   const [selectedKategori, setSelectedKategori] = useState('Semua Kategori')
   const [selectedLevel3, setSelectedLevel3] = useState('Semua Level 3')
+  const [selectedKeterangan, setSelectedKeterangan] = useState('Semua Keterangan')
   const [pageSize, setPageSize] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
 
@@ -944,12 +943,13 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   useEffect(() => {
     setSelectedKategori('Semua Kategori')
     setSelectedLevel3('Semua Level 3')
+    setSelectedKeterangan('Semua Keterangan')
     setCurrentPage(1)
   }, [tab])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [query, status, selectedKategori, selectedLevel3, pageSize])
+  }, [query, status, selectedKategori, selectedLevel3, selectedKeterangan, pageSize])
 
   const availableCategories = useMemo(() => {
     const set = new Set<string>()
@@ -973,6 +973,17 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     return Array.from(set).sort()
   }, [crossData])
 
+  const availableKeterangan = useMemo(() => {
+    const set = new Set<string>()
+    crossData.forEach(item => {
+      const ket = (item.keterangan || item.kbli?.keterangan || item.ntb?.catatan || item.ntb?.keterangan || '').trim()
+      if (ket && ket !== '-' && ket !== '') {
+        set.add(ket)
+      }
+    })
+    return Array.from(set).sort()
+  }, [crossData])
+
   const fetchControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -986,6 +997,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       setSelectedLevel3('Semua Level 3')
     }
   }, [availableLevel3Codes, selectedLevel3])
+
+  useEffect(() => {
+    if (selectedKeterangan !== 'Semua Keterangan' && availableKeterangan.length > 0 && !availableKeterangan.includes(selectedKeterangan)) {
+      setSelectedKeterangan('Semua Keterangan')
+    }
+  }, [availableKeterangan, selectedKeterangan])
 
   const fetchData = (showLoading = false) => {
     if (showLoading) setLoading(true)
@@ -1136,7 +1153,8 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const filteredCrossData = useMemo(() => {
     return crossData.filter(item => {
       const l3 = item.level3FullCode || item.kbli?.level3FullCode || ''
-      const matchQuery = `${item.assignmentId} ${item.namaUsaha} ${item.kbliAkhir} ${item.kbli?.kategori || ''} ${l3} ${item.ntb?.catatan || ''}`.toLowerCase().includes(query.toLowerCase())
+      const itemKet = (item.keterangan || item.kbli?.keterangan || item.ntb?.catatan || item.ntb?.keterangan || '').trim()
+      const matchQuery = `${item.assignmentId} ${item.namaUsaha} ${item.kbliAkhir} ${item.kbli?.kategori || ''} ${l3} ${itemKet}`.toLowerCase().includes(query.toLowerCase())
       if (!matchQuery) return false
 
       if (selectedKategori !== 'Semua Kategori') {
@@ -1156,11 +1174,18 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         }
       }
 
+      if (selectedKeterangan !== 'Semua Keterangan') {
+        const targetKet = selectedKeterangan.trim().toLowerCase()
+        if (itemKet.toLowerCase() !== targetKet) {
+          return false
+        }
+      }
+
       if (status === 'Semua') return true
       const complete = isComplete(item.assignmentId)
       return status === 'Selesai' ? complete : !complete
     })
-  }, [crossData, query, status, selectedKategori, selectedLevel3, checks])
+  }, [crossData, query, status, selectedKategori, selectedLevel3, selectedKeterangan, checks])
 
   const filteredRows = useMemo(() => {
     return rows.filter(row => {
@@ -1594,7 +1619,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Cari assignment, nama usaha, KBLI, catatan..."
+              placeholder="Cari assignment, nama usaha, KBLI, keterangan..."
             />
           </div>
           <select value={status} onChange={e => setStatus(e.target.value)}>
@@ -1627,15 +1652,22 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             </select>
           )}
           {isLiveTab && (
+            <select
+              value={selectedKeterangan}
+              onChange={e => setSelectedKeterangan(e.target.value)}
+              title="Filter berdasarkan keterangan"
+            >
+              <option value="Semua Keterangan">Semua Keterangan ({availableKeterangan.length})</option>
+              {availableKeterangan.map(ket => (
+                <option key={ket} value={ket}>{ket}</option>
+              ))}
+            </select>
+          )}
+          {isLiveTab && (
             <div className="live-sync-indicator" title="Sinkronisasi otomatis dengan database PostgreSQL secara berkala">
               <span className="live-dot" />
               <span>Real-time Sync</span>
             </div>
-          )}
-          {isLiveTab && (
-            <button className="outline" onClick={() => fetchData(true)} title="Segarkan data dari database">
-              <RotateCw className={loading ? 'spin-animation' : ''} /> Segarkan
-            </button>
           )}
           {tab !== 'kbli_check' && (
             <button className="outline" onClick={downloadAllData} title="Unduh data tabel dalam format CSV">
@@ -1709,6 +1741,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                 <th>Nama usaha</th>
                 <th>KBLI akhir</th>
                 {tab === 'kbli_check' && <th>Kecamatan</th>}
+                {tab === 'kbli_check' && <th>Keterangan</th>}
                 <th>Link Fasih</th>
                 <th>Pengecekan 1<br/><small>KBLI</small></th>
                 {tab !== 'kbli_check' && (
@@ -1725,7 +1758,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
             <tbody>
               {loading && crossData.length === 0 ? (
                 <tr>
-                  <td colSpan={tab === 'kbli_check' ? 10 : 11} className="empty-users" style={{ padding: '42px 0' }}>
+                  <td colSpan={11} className="empty-users" style={{ padding: '42px 0' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                       <RotateCw className="spin-animation" style={{ width: 18, height: 18, color: 'var(--blue)' }} />
                       <span style={{ fontSize: '13px', fontWeight: 500, color: '#334155' }}>
@@ -1742,16 +1775,17 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
               ) : isLiveTab ? (
                 paginatedCrossData.length === 0 ? (
                   <tr>
-                    <td colSpan={tab === 'kbli_check' ? 10 : 11} className="empty-users" style={{ padding: '32px 0' }}>
+                    <td colSpan={11} className="empty-users" style={{ padding: '32px 0' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                         <span>Tidak ada data yang cocok dengan filter atau pencarian.</span>
-                        {(query || selectedKategori !== 'Semua Kategori' || selectedLevel3 !== 'Semua Level 3' || status !== 'Semua') && (
+                        {(query || selectedKategori !== 'Semua Kategori' || selectedLevel3 !== 'Semua Level 3' || selectedKeterangan !== 'Semua Keterangan' || status !== 'Semua') && (
                           <button
                             className="outline"
                             onClick={() => {
                               setQuery('')
                               setSelectedKategori('Semua Kategori')
                               setSelectedLevel3('Semua Level 3')
+                              setSelectedKeterangan('Semua Keterangan')
                               setStatus('Semua')
                             }}
                             style={{ fontSize: '12px', padding: '4px 12px', cursor: 'pointer' }}
@@ -1803,6 +1837,27 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                               </span>
                             </td>
                           )}
+                          {tab === 'kbli_check' && (
+                            <td>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                background: '#f8fafc',
+                                color: '#334155',
+                                fontSize: '11.5px',
+                                fontWeight: 500,
+                                border: '1px solid #e2e8f0',
+                                maxWidth: '200px',
+                                textOverflow: 'ellipsis',
+                                overflow: 'hidden',
+                                whiteSpace: 'nowrap',
+                                verticalAlign: 'middle'
+                              }} title={item.keterangan || item.kbli?.keterangan || '-'}>
+                                {item.keterangan || item.kbli?.keterangan || '-'}
+                              </span>
+                            </td>
+                          )}
                           <td>
                             {item.linkFasih && item.linkFasih !== '-' ? (
                               <a
@@ -1843,7 +1898,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
                         </tr>
                         {isExpanded && (
                           <tr className="details-row" key={`${rowKey}-details`}>
-                            <td colSpan={tab === 'kbli_check' ? 10 : 11}>
+                            <td colSpan={11}>
                               <CrossTableDetail
                                 item={item}
                                 onEdit={() => setEditItem(item)}
