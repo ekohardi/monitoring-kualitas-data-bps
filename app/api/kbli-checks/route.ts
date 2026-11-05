@@ -19,86 +19,299 @@ function getVal(row: Record<string, any> | null | undefined, candidates: string[
   return ''
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const headers = {
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
   }
 
+  const { searchParams } = new URL(request.url)
+  const pageParam = parseInt(searchParams.get('page') || '1', 10)
+  const page = isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+  const pageSizeParam = parseInt(searchParams.get('pageSize') || searchParams.get('limit') || '10', 10)
+  const pageSize = isNaN(pageSizeParam) || pageSizeParam < 1 ? 10 : Math.min(pageSizeParam, 200)
+  const search = (searchParams.get('query') || searchParams.get('search') || '').trim()
+  const statusParam = (searchParams.get('status') || '').trim()
+  const kategoriParam = (searchParams.get('kategori') || '').trim()
+  const level3Param = (searchParams.get('level3') || '').trim()
+  const keteranganParam = (searchParams.get('keterangan') || '').trim()
+  const allParam = searchParams.get('all') === 'true'
+  const offset = (page - 1) * pageSize
+
   try {
     if (process.env.DATABASE_URL) {
       await ensureTables()
 
-      const res = await pool.query(`
-        SELECT 
-          k.id,
-          k.assignment_id,
-          k.nama_usaha,
-          k.nama_di_prelist,
-          k.kategori,
-          k.kategori_2025,
-          k.kbli_akhir,
-          k.keg_utama,
-          k.level_3_full_code,
-          k.level_3_name,
-          k.level_4_full_code,
-          k.level_4_name,
-          k.level_6_full_code,
-          k.level_6_name,
-          k.assignment_status_alias,
-          k.status,
-          k.link_fasih,
-          k.keterangan,
-          k.perbaikan_kbli,
-          k.index1,
-          COALESCE(c.check_kbli, k.check_kbli, false) AS check_kbli,
-          COALESCE(c.check_ntb, k.check_ntb, false) AS check_ntb,
-          COALESCE(c.check_kewajaran, k.check_kewajaran, false) AS check_kewajaran,
-          COALESCE(NULLIF(c.checked_by, ''), k.checked_by, '') AS checked_by,
-          COALESCE(NULLIF(c.checked_at, ''), k.checked_at, '') AS checked_at
+      // Build dynamic SQL filters for server-side pagination
+      const whereConditions: string[] = []
+      const params: any[] = []
+
+      if (search) {
+        params.push(`%${search}%`)
+        const idx = params.length
+        whereConditions.push(`(
+          k.assignment_id ILIKE $${idx} OR
+          k.nama_usaha ILIKE $${idx} OR
+          k.nama_di_prelist ILIKE $${idx} OR
+          k.kbli_akhir ILIKE $${idx} OR
+          k.kategori ILIKE $${idx} OR
+          k.kategori_2025 ILIKE $${idx} OR
+          k.keg_utama ILIKE $${idx} OR
+          k.level_3_full_code ILIKE $${idx} OR
+          k.level_3_name ILIKE $${idx} OR
+          k.keterangan ILIKE $${idx} OR
+          k.perbaikan_kbli ILIKE $${idx}
+        )`)
+      }
+
+      if (kategoriParam && kategoriParam.toLowerCase() !== 'semua kategori' && kategoriParam.toLowerCase() !== 'semua') {
+        params.push(kategoriParam)
+        const idx = params.length
+        whereConditions.push(`(
+          LOWER(TRIM(COALESCE(k.kategori, ''))) = LOWER(TRIM($${idx})) OR
+          LOWER(TRIM(COALESCE(k.kategori_2025, ''))) = LOWER(TRIM($${idx})) OR
+          COALESCE(k.kategori, '') ILIKE '%' || $${idx} || '%' OR
+          COALESCE(k.kategori_2025, '') ILIKE '%' || $${idx} || '%'
+        )`)
+      }
+
+      if (level3Param && level3Param.toLowerCase() !== 'semua level 3' && level3Param.toLowerCase() !== 'semua') {
+        params.push(level3Param)
+        const idx = params.length
+        whereConditions.push(`(
+          LOWER(TRIM(COALESCE(k.level_3_full_code, ''))) = LOWER(TRIM($${idx})) OR
+          LOWER(TRIM(COALESCE(k.level_3_name, ''))) = LOWER(TRIM($${idx})) OR
+          COALESCE(k.level_3_full_code, '') ILIKE '%' || $${idx} || '%' OR
+          COALESCE(k.level_3_name, '') ILIKE '%' || $${idx} || '%'
+        )`)
+      }
+
+      if (keteranganParam && keteranganParam.toLowerCase() !== 'semua keterangan' && keteranganParam.toLowerCase() !== 'semua') {
+        params.push(keteranganParam)
+        const idx = params.length
+        whereConditions.push(`(
+          LOWER(TRIM(COALESCE(k.keterangan, ''))) = LOWER(TRIM($${idx})) OR
+          COALESCE(k.keterangan, '') ILIKE '%' || $${idx} || '%'
+        )`)
+      }
+
+      if (statusParam) {
+        const sLower = statusParam.toLowerCase()
+        if (sLower === 'selesai' || sLower === 'selesai dicek') {
+          whereConditions.push(`(
+            COALESCE(c.check_kbli, k.check_kbli, false) = TRUE OR
+            k.status ILIKE '%selesai%'
+          )`)
+        } else if (sLower === 'belum dicek' || sLower === 'belum') {
+          whereConditions.push(`(
+            COALESCE(c.check_kbli, k.check_kbli, false) = FALSE AND
+            (k.status IS NULL OR k.status NOT ILIKE '%selesai%')
+          )`)
+        }
+      }
+
+      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : ''
+
+      const countSql = `
+        SELECT COUNT(*) AS total
         FROM kbli_checks k
-        LEFT JOIN assignment_checks c ON c.assignment_id = k.assignment_id
-        ORDER BY k.id ASC;
-      `).catch(err => {
-        console.error('Failed to select from kbli_checks with join:', err)
-        return { rows: [] }
-      })
+        LEFT JOIN assignment_checks c ON (k.assignment_id IS NOT NULL AND k.assignment_id != '' AND LOWER(TRIM(c.assignment_id)) = LOWER(TRIM(k.assignment_id)))
+        ${whereClause}
+      `
 
-      if (res.rows.length > 0) {
-        const records = res.rows.map(row => {
-          const aid = getVal(row, ['assignment_id', 'assignmentId', 'id']) || `TBN-${row.id}`
+      const totalAllSql = `SELECT COUNT(*) AS total_all FROM kbli_checks`
 
-          const isKbli = Boolean(row.check_kbli)
-          const isNtb = Boolean(row.check_ntb)
-          const isKewajaran = Boolean(row.check_kewajaran)
-          const checkedBy = (row.checked_by || '').trim()
-          const checkedAt = (row.checked_at || '').trim()
+      const catSql = `
+        SELECT DISTINCT cat FROM (
+          SELECT TRIM(kategori) AS cat FROM kbli_checks WHERE kategori IS NOT NULL AND TRIM(kategori) != '' AND TRIM(kategori) != '-'
+          UNION
+          SELECT TRIM(kategori_2025) AS cat FROM kbli_checks WHERE kategori_2025 IS NOT NULL AND TRIM(kategori_2025) != '' AND TRIM(kategori_2025) != '-'
+        ) c ORDER BY cat ASC
+      `
 
-          let status = getVal(row, ['status']) || 'Belum Dicek'
-          if (isKbli) {
-            status = 'Selesai Dicek'
-          } else if (status === 'Selesai Dicek' && !isKbli) {
-            status = 'Belum Dicek'
-          }
+      const level3Sql = `
+        SELECT DISTINCT TRIM(level_3_full_code) AS l3
+        FROM kbli_checks
+        WHERE level_3_full_code IS NOT NULL AND TRIM(level_3_full_code) != '' AND TRIM(level_3_full_code) != '-'
+        ORDER BY l3 ASC
+      `
 
-          const namaUsaha = getVal(row, ['nama_usaha', 'namaUsaha', 'nama_di_prelist', 'nama']) || '-'
-          const namaDiPrelist = getVal(row, ['nama_di_prelist', 'namaDiPrelist']) || namaUsaha
-          const kategori = getVal(row, ['kategori']) || '-'
-          const kategori2025 = getVal(row, ['kategori_2025', 'kategori2025']) || '-'
-          const kbliAkhir = getVal(row, ['kbli_akhir', 'kbliAkhir']) || '-'
-          const kegUtama = getVal(row, ['keg_utama', 'kegUtama']) || '-'
-          const level3FullCode = getVal(row, ['level_3_full_code', 'level3FullCode']) || '-'
-          const level3Name = getVal(row, ['level_3_name', 'level3Name']) || '-'
-          const level4FullCode = getVal(row, ['level_4_full_code', 'level4FullCode']) || '-'
-          const level4Name = getVal(row, ['level_4_name', 'level4Name']) || '-'
-          const level6FullCode = getVal(row, ['level_6_full_code', 'level6FullCode']) || '-'
-          const level6Name = getVal(row, ['level_6_name', 'level6Name']) || '-'
-          const linkFasih = getVal(row, ['link_fasih', 'linkFasih', 'link']) || '-'
-          const keterangan = getVal(row, ['keterangan', 'catatan', 'note']) || '-'
-          const perbaikanKbli = getVal(row, ['perbaikan_kbli', 'perbaikanKbli']) || '-'
+      const ketSql = `
+        SELECT DISTINCT TRIM(keterangan) AS ket
+        FROM kbli_checks
+        WHERE keterangan IS NOT NULL AND TRIM(keterangan) != '' AND TRIM(keterangan) != '-'
+        ORDER BY ket ASC
+      `
 
-          return {
+      let dataSql: string
+      let dataParams: any[]
+
+      if (allParam) {
+        dataSql = `
+          SELECT 
+            k.id,
+            k.assignment_id,
+            k.nama_usaha,
+            k.nama_di_prelist,
+            k.kategori,
+            k.kategori_2025,
+            k.kbli_akhir,
+            k.keg_utama,
+            k.level_3_full_code,
+            k.level_3_name,
+            k.level_4_full_code,
+            k.level_4_name,
+            k.level_6_full_code,
+            k.level_6_name,
+            k.assignment_status_alias,
+            k.status,
+            k.link_fasih,
+            k.keterangan,
+            k.perbaikan_kbli,
+            k.index1,
+            COALESCE(c.check_kbli, k.check_kbli, false) AS check_kbli,
+            COALESCE(c.check_ntb, k.check_ntb, false) AS check_ntb,
+            COALESCE(c.check_kewajaran, k.check_kewajaran, false) AS check_kewajaran,
+            COALESCE(NULLIF(c.checked_by, ''), k.checked_by, '') AS checked_by,
+            COALESCE(NULLIF(c.checked_at, ''), k.checked_at, '') AS checked_at
+          FROM kbli_checks k
+          LEFT JOIN assignment_checks c ON (k.assignment_id IS NOT NULL AND k.assignment_id != '' AND LOWER(TRIM(c.assignment_id)) = LOWER(TRIM(k.assignment_id)))
+          ${whereClause}
+          ORDER BY k.id ASC
+          LIMIT 50000
+        `
+        dataParams = [...params]
+      } else {
+        dataSql = `
+          SELECT 
+            k.id,
+            k.assignment_id,
+            k.nama_usaha,
+            k.nama_di_prelist,
+            k.kategori,
+            k.kategori_2025,
+            k.kbli_akhir,
+            k.keg_utama,
+            k.level_3_full_code,
+            k.level_3_name,
+            k.level_4_full_code,
+            k.level_4_name,
+            k.level_6_full_code,
+            k.level_6_name,
+            k.assignment_status_alias,
+            k.status,
+            k.link_fasih,
+            k.keterangan,
+            k.perbaikan_kbli,
+            k.index1,
+            COALESCE(c.check_kbli, k.check_kbli, false) AS check_kbli,
+            COALESCE(c.check_ntb, k.check_ntb, false) AS check_ntb,
+            COALESCE(c.check_kewajaran, k.check_kewajaran, false) AS check_kewajaran,
+            COALESCE(NULLIF(c.checked_by, ''), k.checked_by, '') AS checked_by,
+            COALESCE(NULLIF(c.checked_at, ''), k.checked_at, '') AS checked_at
+          FROM kbli_checks k
+          LEFT JOIN assignment_checks c ON (k.assignment_id IS NOT NULL AND k.assignment_id != '' AND LOWER(TRIM(c.assignment_id)) = LOWER(TRIM(k.assignment_id)))
+          ${whereClause}
+          ORDER BY k.id ASC
+          LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `
+        dataParams = [...params, pageSize, offset]
+      }
+
+      const [countRes, totalAllRes, catRes, level3Res, ketRes, dataRes] = await Promise.all([
+        pool.query(countSql, params).catch(err => {
+          console.error('Failed to count filtered kbli_checks:', err)
+          return { rows: [{ total: '0' }] }
+        }),
+        pool.query(totalAllSql).catch(err => {
+          console.error('Failed to count total kbli_checks:', err)
+          return { rows: [{ total_all: '0' }] }
+        }),
+        pool.query(catSql).catch(err => {
+          console.error('Failed to select categories from kbli_checks:', err)
+          return { rows: [] }
+        }),
+        pool.query(level3Sql).catch(err => {
+          console.error('Failed to select level3 from kbli_checks:', err)
+          return { rows: [] }
+        }),
+        pool.query(ketSql).catch(err => {
+          console.error('Failed to select keterangan from kbli_checks:', err)
+          return { rows: [] }
+        }),
+        pool.query(dataSql, dataParams).catch(err => {
+          console.error('Failed to select kbli_checks data:', err)
+          return { rows: [] }
+        })
+      ])
+
+      const total = parseInt(countRes.rows[0]?.total || '0', 10)
+      const totalAll = parseInt(totalAllRes.rows[0]?.total_all || '0', 10)
+      const totalPages = Math.max(1, Math.ceil(total / pageSize))
+      const categories = catRes.rows.map((r: any) => r.cat).filter(Boolean)
+      const level3Codes = level3Res.rows.map((r: any) => r.l3).filter(Boolean)
+      const keteranganList = ketRes.rows.map((r: any) => r.ket).filter(Boolean)
+
+      const records = dataRes.rows.map(row => {
+        const aid = getVal(row, ['assignment_id', 'assignmentId', 'id']) || `TBN-${row.id}`
+
+        const isKbli = Boolean(row.check_kbli)
+        const isNtb = Boolean(row.check_ntb)
+        const isKewajaran = Boolean(row.check_kewajaran)
+        const checkedBy = (row.checked_by || '').trim()
+        const checkedAt = (row.checked_at || '').trim()
+
+        let status = getVal(row, ['status']) || 'Belum Dicek'
+        if (isKbli) {
+          status = 'Selesai Dicek'
+        } else if (status === 'Selesai Dicek' && !isKbli) {
+          status = 'Belum Dicek'
+        }
+
+        const namaUsaha = getVal(row, ['nama_usaha', 'namaUsaha', 'nama_di_prelist', 'nama']) || '-'
+        const namaDiPrelist = getVal(row, ['nama_di_prelist', 'namaDiPrelist']) || namaUsaha
+        const kategori = getVal(row, ['kategori']) || '-'
+        const kategori2025 = getVal(row, ['kategori_2025', 'kategori2025']) || '-'
+        const kbliAkhir = getVal(row, ['kbli_akhir', 'kbliAkhir']) || '-'
+        const kegUtama = getVal(row, ['keg_utama', 'kegUtama']) || '-'
+        const level3FullCode = getVal(row, ['level_3_full_code', 'level3FullCode']) || '-'
+        const level3Name = getVal(row, ['level_3_name', 'level3Name']) || '-'
+        const level4FullCode = getVal(row, ['level_4_full_code', 'level4FullCode']) || '-'
+        const level4Name = getVal(row, ['level_4_name', 'level4Name']) || '-'
+        const level6FullCode = getVal(row, ['level_6_full_code', 'level6FullCode']) || '-'
+        const level6Name = getVal(row, ['level_6_name', 'level6Name']) || '-'
+        const linkFasih = getVal(row, ['link_fasih', 'linkFasih', 'link']) || '-'
+        const keterangan = getVal(row, ['keterangan', 'catatan', 'note']) || '-'
+        const perbaikanKbli = getVal(row, ['perbaikan_kbli', 'perbaikanKbli']) || '-'
+
+        return {
+          id: row.id,
+          assignmentId: aid,
+          namaUsaha,
+          namaDiPrelist,
+          kategori,
+          kategori2025,
+          kbliAkhir,
+          kegUtama,
+          level3FullCode,
+          level3Name,
+          level4FullCode,
+          level4Name,
+          level6FullCode,
+          level6Name,
+          linkFasih,
+          status,
+          keterangan,
+          perbaikanKbli,
+          check: {
+            kbli: isKbli,
+            ntb: isNtb,
+            kewajaran: isKewajaran,
+            checkedBy,
+            checkedAt,
+          },
+          kbli: {
             id: row.id,
             assignmentId: aid,
             namaUsaha,
@@ -107,6 +320,7 @@ export async function GET() {
             kategori2025,
             kbliAkhir,
             kegUtama,
+            status,
             level3FullCode,
             level3Name,
             level4FullCode,
@@ -114,49 +328,35 @@ export async function GET() {
             level6FullCode,
             level6Name,
             linkFasih,
-            status,
             keterangan,
             perbaikanKbli,
-            check: {
-              kbli: isKbli,
-              ntb: isNtb,
-              kewajaran: isKewajaran,
-              checkedBy,
-              checkedAt,
-            },
-            kbli: {
-              id: row.id,
-              assignmentId: aid,
-              namaUsaha,
-              namaDiPrelist,
-              kategori,
-              kategori2025,
-              kbliAkhir,
-              kegUtama,
-              status,
-              level3FullCode,
-              level3Name,
-              level4FullCode,
-              level4Name,
-              level6FullCode,
-              level6Name,
-              linkFasih,
-              keterangan,
-              perbaikanKbli,
-            },
-            ntb: null
-          }
-        })
+          },
+          ntb: null
+        }
+      })
 
+      if (searchParams.get('format') === 'array') {
         return NextResponse.json(records, { headers })
       }
+
+      return NextResponse.json({
+        data: records,
+        total,
+        totalAll,
+        page,
+        pageSize,
+        totalPages,
+        categories,
+        level3Codes,
+        keteranganList
+      }, { headers })
     }
   } catch (error) {
     console.error('Error fetching kbli checks:', error)
   }
 
   // Fallback in-memory
-  const fallback = initialSeedKbli.map((k, idx) => ({
+  let fallback = initialSeedKbli.map((k, idx) => ({
     id: idx + 1,
     assignmentId: k.assignment_id,
     namaUsaha: k.nama_usaha,
@@ -200,7 +400,85 @@ export async function GET() {
     ntb: null
   }))
 
-  return NextResponse.json(fallback, { headers })
+  const catSet = new Set<string>()
+  const l3Set = new Set<string>()
+  const ketSet = new Set<string>()
+  initialSeedKbli.forEach(k => {
+    if (k.kategori && k.kategori !== '-') catSet.add(k.kategori.trim())
+    if (k.kategori_2025 && k.kategori_2025 !== '-') catSet.add(k.kategori_2025.trim())
+    if (k.level_3_full_code && k.level_3_full_code !== '-') l3Set.add(k.level_3_full_code.trim())
+    if (k.keterangan && k.keterangan !== '-') ketSet.add(k.keterangan.trim())
+  })
+  const fallbackCategories = Array.from(catSet).sort()
+  const fallbackLevel3 = Array.from(l3Set).sort()
+  const fallbackKeterangan = Array.from(ketSet).sort()
+
+  const totalAllFallback = fallback.length
+
+  if (search) {
+    const sLower = search.toLowerCase()
+    fallback = fallback.filter(item =>
+      `${item.assignmentId} ${item.namaUsaha} ${item.namaDiPrelist} ${item.kbliAkhir} ${item.kategori} ${item.kategori2025} ${item.kegUtama} ${item.level3FullCode} ${item.keterangan} ${item.perbaikanKbli}`
+        .toLowerCase()
+        .includes(sLower)
+    )
+  }
+
+  if (kategoriParam && kategoriParam.toLowerCase() !== 'semua kategori' && kategoriParam.toLowerCase() !== 'semua') {
+    const target = kategoriParam.toLowerCase()
+    fallback = fallback.filter(item => {
+      const k1 = (item.kategori || '').toLowerCase()
+      const k2 = (item.kategori2025 || '').toLowerCase()
+      return k1 === target || k2 === target || k1.includes(target) || k2.includes(target)
+    })
+  }
+
+  if (level3Param && level3Param.toLowerCase() !== 'semua level 3' && level3Param.toLowerCase() !== 'semua') {
+    const target = level3Param.toLowerCase()
+    fallback = fallback.filter(item => {
+      const l3 = (item.level3FullCode || '').toLowerCase()
+      return l3 === target || l3.includes(target)
+    })
+  }
+
+  if (keteranganParam && keteranganParam.toLowerCase() !== 'semua keterangan' && keteranganParam.toLowerCase() !== 'semua') {
+    const target = keteranganParam.toLowerCase()
+    fallback = fallback.filter(item => {
+      const ket = (item.keterangan || '').toLowerCase()
+      return ket === target || ket.includes(target)
+    })
+  }
+
+  if (statusParam) {
+    const s = statusParam.toLowerCase()
+    if (s === 'selesai' || s === 'selesai dicek') {
+      fallback = fallback.filter(item => item.check.kbli || (item.status && item.status.toLowerCase().includes('selesai')))
+    } else if (s === 'belum dicek' || s === 'belum') {
+      fallback = fallback.filter(item => !item.check.kbli && (!item.status || !item.status.toLowerCase().includes('selesai')))
+    }
+  }
+
+  const totalFallback = fallback.length
+  const totalPagesFallback = Math.max(1, Math.ceil(totalFallback / pageSize))
+  const pageFallback = Math.min(Math.max(1, page), totalPagesFallback)
+  const offsetFallback = (pageFallback - 1) * pageSize
+  const pagedFallback = allParam ? fallback : fallback.slice(offsetFallback, offsetFallback + pageSize)
+
+  if (searchParams.get('format') === 'array') {
+    return NextResponse.json(pagedFallback, { headers })
+  }
+
+  return NextResponse.json({
+    data: pagedFallback,
+    total: totalFallback,
+    totalAll: totalAllFallback,
+    page: pageFallback,
+    pageSize,
+    totalPages: totalPagesFallback,
+    categories: fallbackCategories,
+    level3Codes: fallbackLevel3,
+    keteranganList: fallbackKeterangan
+  }, { headers })
 }
 
 export async function POST(request: Request) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { AlertCircle, BarChart3, CheckCircle2, ChevronDown, Database, Download, ExternalLink, Eye, FileCheck2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MoreHorizontal, Pencil, Plus, RotateCw, Search, Settings, ShieldCheck, Trash2, Upload, UserRoundCheck, Users, UserRoundX, X } from 'lucide-react'
@@ -906,6 +906,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const [selectedKeterangan, setSelectedKeterangan] = useState('Semua Keterangan')
   const [pageSize, setPageSize] = useState<number>(10)
   const [currentPage, setCurrentPage] = useState<number>(1)
+  const [serverTotal, setServerTotal] = useState<number>(0)
+  const [serverTotalAll, setServerTotalAll] = useState<number>(0)
+  const [serverCategories, setServerCategories] = useState<string[]>([])
+  const [serverLevel3Codes, setServerLevel3Codes] = useState<string[]>([])
+  const [serverKeterangan, setServerKeterangan] = useState<string[]>([])
+  const [debouncedQuery, setDebouncedQuery] = useState(query)
 
   interface ImportPreviewData {
     fileName: string
@@ -932,6 +938,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   const [importLoading, setImportLoading] = useState(false)
   const [importProgress, setImportProgress] = useState<ImportProgressState | null>(null)
 
+  const isServerPaginated = tab === 'kbli_check'
   const title = tab === 'stage3'
     ? 'Pembagian Stage 3'
     : tab === 'negative'
@@ -939,6 +946,13 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     : tab === 'kbli_check'
     ? 'KBLI Check'
     : 'Check Data'
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(query)
+    }, 300)
+    return () => clearTimeout(handler)
+  }, [query])
 
   useEffect(() => {
     setSelectedKategori('Semua Kategori')
@@ -949,40 +963,40 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [query, status, selectedKategori, selectedLevel3, selectedKeterangan, pageSize])
+  }, [debouncedQuery, status, selectedKategori, selectedLevel3, selectedKeterangan, pageSize])
 
   const availableCategories = useMemo(() => {
-    const set = new Set<string>()
+    const set = new Set<string>(serverCategories)
     crossData.forEach(item => {
       const k1 = (item.kategori || item.kbli?.kategori || '').trim()
       const k2 = (item.ntb?.kategori || '').trim()
       if (k1 && k1 !== '-') set.add(k1)
       if (k2 && k2 !== '-') set.add(k2)
     })
-    return Array.from(set).sort()
-  }, [crossData])
+    return Array.from(set).filter(Boolean).sort()
+  }, [serverCategories, crossData])
 
   const availableLevel3Codes = useMemo(() => {
-    const set = new Set<string>()
+    const set = new Set<string>(serverLevel3Codes)
     crossData.forEach(item => {
       const l3 = (item.level3FullCode || item.kbli?.level3FullCode || '').trim()
       if (l3 && l3 !== '-' && l3 !== '') {
         set.add(l3)
       }
     })
-    return Array.from(set).sort()
-  }, [crossData])
+    return Array.from(set).filter(Boolean).sort()
+  }, [serverLevel3Codes, crossData])
 
   const availableKeterangan = useMemo(() => {
-    const set = new Set<string>()
+    const set = new Set<string>(serverKeterangan)
     crossData.forEach(item => {
       const ket = (item.keterangan || item.kbli?.keterangan || item.ntb?.catatan || item.ntb?.keterangan || '').trim()
       if (ket && ket !== '-' && ket !== '') {
         set.add(ket)
       }
     })
-    return Array.from(set).sort()
-  }, [crossData])
+    return Array.from(set).filter(Boolean).sort()
+  }, [serverKeterangan, crossData])
 
   const fetchControllerRef = useRef<AbortController | null>(null)
 
@@ -1004,7 +1018,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     }
   }, [availableKeterangan, selectedKeterangan])
 
-  const fetchData = (showLoading = false) => {
+  const fetchData = useCallback((showLoading = false) => {
     if (showLoading) setLoading(true)
 
     if (fetchControllerRef.current) {
@@ -1013,8 +1027,18 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     const controller = new AbortController()
     fetchControllerRef.current = controller
 
-    const endpoint = tab === 'kbli_check' ? '/api/kbli-checks' : '/api/check-data'
-    fetch(`${endpoint}?_t=${Date.now()}`, {
+    const isServerPaginated = tab === 'kbli_check'
+    const endpoint = isServerPaginated ? '/api/kbli-checks' : (tab === 'kbli' ? '/api/check-data' : null)
+    if (!endpoint) {
+      if (showLoading) setLoading(false)
+      return
+    }
+
+    const url = isServerPaginated
+      ? `${endpoint}?page=${currentPage}&pageSize=${pageSize}&query=${encodeURIComponent(debouncedQuery)}&status=${encodeURIComponent(status)}&kategori=${encodeURIComponent(selectedKategori)}&level3=${encodeURIComponent(selectedLevel3)}&keterangan=${encodeURIComponent(selectedKeterangan)}&_t=${Date.now()}`
+      : `${endpoint}?_t=${Date.now()}`
+
+    fetch(url, {
       signal: controller.signal,
       cache: 'no-store',
       headers: {
@@ -1026,9 +1050,30 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         return response.json()
       })
-      .then((items: CrossCheckRecord[]) => {
+      .then((res: any) => {
         if (controller.signal.aborted) return
+
+        let items: CrossCheckRecord[] = []
+        if (Array.isArray(res)) {
+          items = res
+          setServerTotal(res.length)
+          setServerTotalAll(res.length)
+        } else if (res && Array.isArray(res.data)) {
+          items = res.data
+          setServerTotal(typeof res.total === 'number' ? res.total : res.data.length)
+          setServerTotalAll(typeof res.totalAll === 'number' ? res.totalAll : (res.total ?? res.data.length))
+          if (Array.isArray(res.categories) && res.categories.length > 0) {
+            setServerCategories(res.categories)
+          }
+          if (Array.isArray(res.level3Codes) && res.level3Codes.length > 0) {
+            setServerLevel3Codes(res.level3Codes)
+          }
+          if (Array.isArray(res.keteranganList) && res.keteranganList.length > 0) {
+            setServerKeterangan(res.keteranganList)
+          }
+        }
         setCrossData(items)
+
         const checksFromDb: Record<string, CheckState> = {}
         items.forEach(it => {
           if (it.check) {
@@ -1046,7 +1091,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
           setLoading(false)
         }
       })
-  }
+  }, [tab, currentPage, pageSize, debouncedQuery, status, selectedKategori, selectedLevel3, selectedKeterangan])
+
+  const fetchDataRef = useRef(fetchData)
+  useEffect(() => {
+    fetchDataRef.current = fetchData
+  }, [fetchData])
 
   useEffect(() => {
     if (!isLiveTab) {
@@ -1059,12 +1109,12 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     // Real-time polling every 30 seconds for multi-user live status (also syncs on tab focus)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchData(false)
+        fetchDataRef.current(false)
       }
     }, 30000)
 
     const onFocus = () => {
-      fetchData(false)
+      fetchDataRef.current(false)
     }
     window.addEventListener('focus', onFocus)
 
@@ -1075,7 +1125,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
         try { fetchControllerRef.current.abort() } catch {}
       }
     }
-  }, [tab])
+  }, [fetchData, isLiveTab])
 
   const updateCheck = async (id: string, key: keyof Pick<CheckState, 'kbli' | 'ntb' | 'kewajaran'>) => {
     const checkerName = currentUser?.username || currentUser?.name || 'Admin BPS'
@@ -1151,6 +1201,8 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
   }
 
   const filteredCrossData = useMemo(() => {
+    if (isServerPaginated) return crossData
+
     return crossData.filter(item => {
       const l3 = item.level3FullCode || item.kbli?.level3FullCode || ''
       const itemKet = (item.keterangan || item.kbli?.keterangan || item.ntb?.catatan || item.ntb?.keterangan || '').trim()
@@ -1185,7 +1237,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
       const complete = isComplete(item.assignmentId)
       return status === 'Selesai' ? complete : !complete
     })
-  }, [crossData, query, status, selectedKategori, selectedLevel3, selectedKeterangan, checks])
+  }, [crossData, query, status, selectedKategori, selectedLevel3, selectedKeterangan, checks, isServerPaginated])
 
   const filteredRows = useMemo(() => {
     return rows.filter(row => {
@@ -1198,8 +1250,79 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     })
   }, [rows, query, status, checks])
 
-  const downloadAllData = () => {
-    if (isLiveTab) {
+  const downloadAllData = async () => {
+    if (tab === 'kbli_check') {
+      try {
+        setLoading(true)
+        const endpoint = `/api/kbli-checks?all=true&query=${encodeURIComponent(debouncedQuery)}&status=${encodeURIComponent(status)}&kategori=${encodeURIComponent(selectedKategori)}&level3=${encodeURIComponent(selectedLevel3)}&keterangan=${encodeURIComponent(selectedKeterangan)}&_t=${Date.now()}`
+        const res = await fetch(endpoint)
+        const json = await res.json()
+        const exportItems: CrossCheckRecord[] = Array.isArray(json) ? json : (json.data || [])
+        const headers = [
+          'assignment_id',
+          'nama_di_prelist',
+          'nama_usaha',
+          'kategori',
+          'kategori_2025',
+          'kbli_akhir',
+          'kegiatan_utama',
+          'level_3_kode_nama',
+          'level_4_kode_nama',
+          'level_6_kode_nama',
+          'keterangan',
+          'perbaikan_kbli',
+          'link_fasih'
+        ]
+        const exportRows = exportItems.map(item => {
+          const level3 = item.kbli?.level3FullCode && item.kbli?.level3Name
+            ? `${item.kbli.level3FullCode} - ${item.kbli.level3Name}`
+            : (item.kbli?.level3FullCode || item.kbli?.level3Name || '-')
+
+          const level4 = item.kbli?.level4FullCode && item.kbli?.level4Name
+            ? `${item.kbli.level4FullCode} - ${item.kbli.level4Name}`
+            : (item.kbli?.level4FullCode || item.kbli?.level4Name || '-')
+
+          const level6 = item.kbli?.level6FullCode && item.kbli?.level6Name
+            ? `${item.kbli.level6FullCode} - ${item.kbli.level6Name}`
+            : (item.kbli?.level6FullCode || item.kbli?.level6Name || item.ntb?.level6FullCode || '-')
+
+          const keterangan = item.kbli?.keterangan && item.kbli.keterangan !== '-'
+            ? item.kbli.keterangan
+            : (item.keterangan && item.keterangan !== '-'
+              ? item.keterangan
+              : (item.ntb?.catatan && item.ntb.catatan !== '-'
+                ? item.ntb.catatan
+                : (item.ntb?.keterangan || '-')))
+
+          const perbaikanKbli = item.kbli?.perbaikanKbli && item.kbli.perbaikanKbli !== '-'
+            ? item.kbli.perbaikanKbli
+            : (item.perbaikanKbli && item.perbaikanKbli !== '-'
+              ? item.perbaikanKbli
+              : (item.ntb?.perbaikanKbli || '-'))
+
+          return [
+            item.assignmentId,
+            item.kbli?.namaDiPrelist || item.namaDiPrelist || item.namaUsaha || '-',
+            item.kbli?.namaUsaha || item.namaUsaha || item.ntb?.namaPrincipal || '-',
+            item.kbli?.kategori || item.kategori || item.ntb?.kategori || '-',
+            item.kbli?.kategori2025 || item.kategori2025 || '-',
+            item.kbli?.kbliAkhir || item.kbliAkhir || item.ntb?.kbliAkhir || '-',
+            item.kbli?.kegUtama || item.kegUtama || item.ntb?.catatan || '-',
+            level3,
+            level4,
+            level6,
+            keterangan,
+            perbaikanKbli,
+            item.linkFasih
+          ]
+        })
+        exportToCsv('kbli_checks_kualitas.csv', headers, exportRows)
+      } catch (err) {
+        console.error('Failed to export all kbli data:', err)
+      } finally {
+        setLoading(false)
+      }
+    } else if (isLiveTab) {
       const headers = [
         'assignment_id',
         'nama_di_prelist',
@@ -1258,7 +1381,7 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
           item.linkFasih
         ]
       })
-      exportToCsv(`${tab === 'kbli_check' ? 'kbli_checks' : 'check_data'}_kualitas.csv`, headers, exportRows)
+      exportToCsv('check_data_kualitas.csv', headers, exportRows)
     } else {
       exportToCsv(`${tab}_data.csv`, columns, filteredRows)
     }
@@ -1578,16 +1701,24 @@ function TablePage({tab,query,setQuery,status,setStatus,columns,rows,currentUser
     }
   }
 
-  const activeCount = isLiveTab ? filteredCrossData.length : filteredRows.length
-  const totalCount = isLiveTab ? crossData.length : rows.length
+  const activeCount = isServerPaginated
+    ? serverTotal
+    : (isLiveTab ? filteredCrossData.length : filteredRows.length)
+
+  const totalCount = isServerPaginated
+    ? serverTotalAll
+    : (isLiveTab ? crossData.length : rows.length)
+
   const totalPages = Math.max(1, Math.ceil(activeCount / pageSize))
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages)
-  const startIndex = (safeCurrentPage - 1) * pageSize
-  const endIndex = Math.min(startIndex + pageSize, activeCount)
+  const startIndex = activeCount === 0 ? 0 : (safeCurrentPage - 1) * pageSize
+  const endIndex = isServerPaginated
+    ? Math.min(startIndex + crossData.length, activeCount)
+    : Math.min(startIndex + pageSize, activeCount)
 
-  const paginatedCrossData = useMemo(() => {
-    return filteredCrossData.slice(startIndex, endIndex)
-  }, [filteredCrossData, startIndex, endIndex])
+  const paginatedCrossData = isServerPaginated
+    ? crossData
+    : filteredCrossData.slice(startIndex, endIndex)
 
   const paginatedRows = useMemo(() => {
     return filteredRows.slice(startIndex, endIndex)
